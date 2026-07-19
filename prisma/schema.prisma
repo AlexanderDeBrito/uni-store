@@ -1,0 +1,152 @@
+// UNI STORE — Fase 1
+// Valores monetários são armazenados em centavos (Int).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL") // pooled (PgBouncer, porta 6543 no Supabase)
+  directUrl = env("DIRECT_URL") // conexão direta (porta 5432) para migrações
+}
+
+model Usuario {
+  id        String   @id @default(cuid())
+  nome      String
+  email     String   @unique
+  senhaHash String
+  criadoEm  DateTime @default(now())
+
+  movimentacoes MovimentacaoEstoque[]
+  vendas        Venda[]
+}
+
+model Setor {
+  id       String  @id @default(cuid())
+  nome     String  @unique
+  regiao   String?
+  ativo    Boolean @default(true)
+
+  congregacoes Congregacao[]
+}
+
+model Congregacao {
+  id      String  @id @default(cuid())
+  nome    String
+  lider   String // Nome do Líder de Jovens
+  ativo   Boolean @default(true)
+  setorId String
+  setor   Setor   @relation(fields: [setorId], references: [id])
+
+  clientes Cliente[]
+  vendas   Venda[]
+
+  @@unique([nome, setorId])
+}
+
+model Cliente {
+  id            String       @id @default(cuid())
+  cpf           String       @unique // somente dígitos
+  nome          String
+  congregacaoId String?
+  congregacao   Congregacao? @relation(fields: [congregacaoId], references: [id])
+  criadoEm      DateTime     @default(now())
+  atualizadoEm  DateTime     @updatedAt
+
+  vendas Venda[]
+}
+
+model Produto {
+  id               String   @id @default(cuid())
+  modelo           String
+  cor              String
+  tamanho          String
+  precoVenda       Int // centavos
+  custoReferencia  Int? // centavos
+  descricao        String?
+  estoqueAtual     Int      @default(0) // cache; fonte de verdade é MovimentacaoEstoque
+  criadoEm         DateTime @default(now())
+  atualizadoEm     DateTime @updatedAt
+
+  movimentacoes MovimentacaoEstoque[]
+  vendaItens    VendaItem[]
+
+  @@unique([modelo, cor, tamanho])
+}
+
+enum TipoMovimentacao {
+  ENTRADA
+  SAIDA
+  AJUSTE_ENTRADA
+  AJUSTE_SAIDA
+}
+
+enum OrigemMovimentacao {
+  PRODUCAO // entrada vinda da fábrica
+  VENDA
+  EDICAO_VENDA
+  EXCLUSAO_VENDA
+  AJUSTE_MANUAL
+}
+
+model MovimentacaoEstoque {
+  id            String             @id @default(cuid())
+  produtoId     String
+  produto       Produto            @relation(fields: [produtoId], references: [id])
+  tipo          TipoMovimentacao
+  origem        OrigemMovimentacao
+  quantidade    Int // sempre positiva; o tipo define o sinal
+  custoUnitario Int? // centavos; obrigatório em entradas de produção (validado na aplicação)
+  data          DateTime           @default(now())
+  observacao    String?
+  vendaId       String?
+  venda         Venda?             @relation(fields: [vendaId], references: [id], onDelete: SetNull)
+  usuarioId     String?
+  usuario       Usuario?           @relation(fields: [usuarioId], references: [id])
+  criadoEm      DateTime           @default(now())
+
+  @@index([produtoId, data])
+}
+
+enum FormaPagamento {
+  CARTAO
+  PIX
+  DINHEIRO
+}
+
+model Venda {
+  id             String         @id @default(cuid())
+  clienteId      String
+  cliente        Cliente        @relation(fields: [clienteId], references: [id])
+  congregacaoId  String
+  congregacao    Congregacao    @relation(fields: [congregacaoId], references: [id])
+  liderNome      String // snapshot editável do líder no momento da venda
+  formaPagamento FormaPagamento
+  total          Int // centavos
+  lucroTotal     Int? // centavos; null = "não calculado" (sem custo conhecido)
+  observacoes    String?
+  data           DateTime       @default(now())
+  usuarioId      String?
+  usuario        Usuario?       @relation(fields: [usuarioId], references: [id])
+  criadoEm       DateTime       @default(now())
+  atualizadoEm   DateTime       @updatedAt
+
+  itens         VendaItem[]
+  movimentacoes MovimentacaoEstoque[]
+
+  @@index([data])
+}
+
+model VendaItem {
+  id            String  @id @default(cuid())
+  vendaId       String
+  venda         Venda   @relation(fields: [vendaId], references: [id], onDelete: Cascade)
+  produtoId     String
+  produto       Produto @relation(fields: [produtoId], references: [id])
+  quantidade    Int
+  precoUnitario Int // centavos; snapshot do preço na venda
+  custoUnitario Int? // centavos; snapshot do custo médio na venda
+
+  @@index([produtoId])
+}
