@@ -34,7 +34,7 @@ export default async function EditarVendaPage({
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight lg:text-3xl">
+        <h1 className="text-2xl font-bold uppercase tracking-tight lg:text-3xl">
           Editar venda
         </h1>
         <p className="text-sm text-muted-foreground">

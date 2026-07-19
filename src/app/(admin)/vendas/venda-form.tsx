@@ -171,7 +171,7 @@ export function VendaForm({
           <CardTitle className="flex items-center gap-2 text-lg">
             Cliente
             {recorrente && (
-              <span className="flex items-center gap-1 text-sm font-normal text-green-700">
+              <span className="flex items-center gap-1 text-sm font-normal text-muted-foreground">
                 <UserCheck className="size-4" /> recorrente
               </span>
             )}

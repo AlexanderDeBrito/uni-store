@@ -94,7 +94,7 @@ export default async function DashboardPage() {
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight lg:text-3xl">
+          <h1 className="text-2xl font-bold uppercase tracking-tight lg:text-3xl">
             Dashboard
           </h1>
           <p className="text-sm text-muted-foreground">
@@ -105,7 +105,7 @@ export default async function DashboardPage() {
             })}
           </p>
         </div>
-        <Button render={<Link href="/vendas/nova" />} size="lg">
+        <Button nativeButton={false} render={<Link href="/vendas/nova" />} size="lg">
           <ShoppingCart className="size-4" /> Nova venda
         </Button>
       </div>

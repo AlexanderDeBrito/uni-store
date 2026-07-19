@@ -65,7 +65,7 @@ export default async function EstoquePage({
     <div className="mx-auto max-w-5xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight lg:text-3xl">
+          <h1 className="text-2xl font-bold uppercase tracking-tight lg:text-3xl">
             Estoque
           </h1>
           <p className="text-sm text-muted-foreground">
@@ -75,7 +75,7 @@ export default async function EstoquePage({
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
-            render={<Link href="/estoque/movimentacoes" />}
+            nativeButton={false} render={<Link href="/estoque/movimentacoes" />}
           >
             <History className="size-4" /> Histórico
           </Button>

@@ -19,14 +19,22 @@ export function MobileMenu() {
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger
         render={
-          <Button variant="ghost" size="icon" aria-label="Abrir menu" />
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Abrir menu"
+            className="text-white hover:bg-white/10 hover:text-white"
+          />
         }
       >
         <Menu className="size-5" />
       </SheetTrigger>
-      <SheetContent side="left" className="w-64 p-4">
+      <SheetContent
+        side="left"
+        className="w-64 border-white/10 bg-neutral-950 p-4 text-white"
+      >
         <SheetHeader className="p-0 pb-4">
-          <SheetTitle className="text-left font-bold">
+          <SheetTitle className="text-left text-sm font-bold tracking-[0.2em] text-white">
             UNI STORE
           </SheetTitle>
         </SheetHeader>

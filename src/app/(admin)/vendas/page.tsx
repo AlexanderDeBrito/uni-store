@@ -75,7 +75,7 @@ export default async function VendasPage({
     <div className="mx-auto max-w-6xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight lg:text-3xl">
+          <h1 className="text-2xl font-bold uppercase tracking-tight lg:text-3xl">
             Vendas
           </h1>
           <p className="text-sm text-muted-foreground">
@@ -83,7 +83,7 @@ export default async function VendasPage({
             {formatarBRL(totalPeriodo)} no filtro atual
           </p>
         </div>
-        <Button render={<Link href="/vendas/nova" />}>
+        <Button nativeButton={false} render={<Link href="/vendas/nova" />}>
           <Plus className="size-4" /> Nova venda
         </Button>
       </div>
@@ -165,7 +165,7 @@ export default async function VendasPage({
                         n/c
                       </span>
                     ) : (
-                      <span className="text-green-700">
+                      <span className="font-medium">
                         {formatarBRL(v.lucroTotal)}
                       </span>
                     )}
@@ -175,7 +175,7 @@ export default async function VendasPage({
                       <Button
                         variant="ghost"
                         size="sm"
-                        render={<Link href={`/vendas/${v.id}/editar`} />}
+                        nativeButton={false} render={<Link href={`/vendas/${v.id}/editar`} />}
                       >
                         Editar
                       </Button>

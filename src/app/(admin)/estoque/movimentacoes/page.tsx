@@ -63,14 +63,14 @@ export default async function MovimentacoesPage({
     <div className="mx-auto max-w-5xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight lg:text-3xl">
+          <h1 className="text-2xl font-bold uppercase tracking-tight lg:text-3xl">
             Histórico de movimentação
           </h1>
           <p className="text-sm text-muted-foreground">
             Últimas 200 movimentações de estoque
           </p>
         </div>
-        <Button variant="outline" render={<Link href="/estoque" />}>
+        <Button variant="outline" nativeButton={false} render={<Link href="/estoque" />}>
           <ArrowLeft className="size-4" /> Voltar ao estoque
         </Button>
       </div>
@@ -132,7 +132,7 @@ export default async function MovimentacoesPage({
                     </TableCell>
                     <TableCell
                       className={`text-right font-medium ${
-                        tipo.entrada ? "text-green-700" : "text-destructive"
+                        tipo.entrada ? "text-foreground" : "text-muted-foreground"
                       }`}
                     >
                       {tipo.entrada ? "+" : "−"}
