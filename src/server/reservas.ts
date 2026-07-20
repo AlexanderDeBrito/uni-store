@@ -2,10 +2,19 @@
 
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
+import type { Prisma } from "@prisma/client"
 import { db } from "@/lib/db"
 import { requireAuth } from "@/lib/auth"
 import { limparCpf } from "@/lib/cpf"
+import { custoUnitarioProduto } from "./custo"
 import type { ActionState } from "./action-state"
+
+type Tx = Prisma.TransactionClient
+
+const itemSchema = z.object({
+  produtoId: z.string().min(1),
+  quantidade: z.number().int().positive(),
+})
 
 const reservaSchema = z.object({
   eventoId: z.string().min(1),
@@ -13,32 +22,57 @@ const reservaSchema = z.object({
   telefone: z.string().trim().min(8, "Informe um telefone válido"),
   cpf: z.string().trim().optional(),
   congregacaoId: z.string().optional(),
-  produtoId: z.string().min(1, "Escolha o produto"),
-  quantidade: z.coerce.number().int().positive("Quantidade inválida"),
-  formaPagamento: z.enum(["CARTAO", "PIX", "DINHEIRO"], {
-    message: "Escolha a forma de pagamento",
-  }),
+  formaPagamento: z.enum(["CARTAO", "PIX", "DINHEIRO"]).optional(),
   observacoes: z.string().trim().optional(),
+  itens: z.array(itemSchema).min(1, "Escolha pelo menos uma peça"),
 })
 
+export type ReservaPayload = z.infer<typeof reservaSchema>
 export type ReservaResult = ActionState & { codigo?: string }
 
-/** Cria reserva pelo link público (sem login). Não bloqueia estoque — regra 7.1 do PRD. */
-export async function criarReserva(
-  _prev: ReservaResult,
-  formData: FormData
-): Promise<ReservaResult> {
-  const parsed = reservaSchema.safeParse({
-    eventoId: formData.get("eventoId"),
-    nome: formData.get("nome"),
-    telefone: formData.get("telefone"),
-    cpf: (formData.get("cpf") as string) || undefined,
-    congregacaoId: (formData.get("congregacaoId") as string) || undefined,
-    produtoId: formData.get("produtoId"),
-    quantidade: formData.get("quantidade"),
-    formaPagamento: formData.get("formaPagamento"),
-    observacoes: (formData.get("observacoes") as string) || undefined,
-  })
+/**
+ * Prende peças para a reserva. O estoque físico não muda — apenas o disponível,
+ * que é `estoqueAtual - estoqueReservado`. O UPDATE condicional garante que duas
+ * reservas simultâneas não passem do saldo.
+ */
+async function segurarEstoque(tx: Tx, produtoId: string, quantidade: number) {
+  const afetados = await tx.$executeRaw`
+    UPDATE "Produto"
+    SET "estoqueReservado" = "estoqueReservado" + ${quantidade}
+    WHERE "id" = ${produtoId}
+      AND "estoqueAtual" - "estoqueReservado" >= ${quantidade}
+  `
+  if (afetados === 0) {
+    const p = await tx.produto.findUnique({
+      where: { id: produtoId },
+      include: { modelo: true },
+    })
+    const disponivel = p ? p.estoqueAtual - p.estoqueReservado : 0
+    throw new Error(
+      `Estoque insuficiente de ${p?.modelo.nome} ${p?.cor} — ${p?.tamanho}. Disponível: ${disponivel}`
+    )
+  }
+}
+
+/** Devolve as peças presas ao disponível (cancelamento, inadimplência, retirada). */
+async function liberarEstoque(tx: Tx, produtoId: string, quantidade: number) {
+  await tx.$executeRaw`
+    UPDATE "Produto"
+    SET "estoqueReservado" = GREATEST("estoqueReservado" - ${quantidade}, 0)
+    WHERE "id" = ${produtoId}
+  `
+}
+
+async function liberarItensDaReserva(tx: Tx, reservaId: string) {
+  const itens = await tx.reservaItem.findMany({ where: { reservaId } })
+  for (const item of itens) {
+    await liberarEstoque(tx, item.produtoId, item.quantidade)
+  }
+}
+
+/** Cria reserva pelo link público (sem login) e já segura as peças. */
+export async function criarReserva(payload: ReservaPayload): Promise<ReservaResult> {
+  const parsed = reservaSchema.safeParse(payload)
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0].message }
   }
@@ -52,77 +86,227 @@ export async function criarReserva(
     return { ok: false, message: "O prazo para reservas deste evento encerrou." }
   }
 
-  const total = await db.reserva.count()
-  const codigo = `R-${String(total + 1).padStart(4, "0")}`
+  try {
+    const codigo = await db.$transaction(async (tx) => {
+      const total = await tx.reserva.count()
+      const codigo = `R-${String(total + 1).padStart(4, "0")}`
 
-  await db.reserva.create({
-    data: {
-      codigo,
-      nome: dados.nome,
-      telefone: dados.telefone,
-      cpf: dados.cpf ? limparCpf(dados.cpf) : null,
-      congregacaoId: dados.congregacaoId || null,
-      eventoId: dados.eventoId,
-      produtoId: dados.produtoId,
-      quantidade: dados.quantidade,
-      formaPagamento: dados.formaPagamento,
-      observacoes: dados.observacoes || null,
-    },
-  })
+      const reserva = await tx.reserva.create({
+        data: {
+          codigo,
+          nome: dados.nome,
+          telefone: dados.telefone,
+          cpf: dados.cpf ? limparCpf(dados.cpf) : null,
+          congregacaoId: dados.congregacaoId || null,
+          eventoId: dados.eventoId,
+          formaPagamento: dados.formaPagamento ?? null,
+          observacoes: dados.observacoes || null,
+        },
+      })
 
-  revalidatePath("/reservas")
-  return { ok: true, message: "Reserva registrada!", codigo }
+      for (const item of dados.itens) {
+        const produto = await tx.produto.findUnique({
+          where: { id: item.produtoId },
+        })
+        if (!produto) throw new Error("Produto não encontrado.")
+
+        await segurarEstoque(tx, item.produtoId, item.quantidade)
+        await tx.reservaItem.create({
+          data: {
+            reservaId: reserva.id,
+            produtoId: item.produtoId,
+            quantidade: item.quantidade,
+            precoUnitario: produto.precoVenda,
+          },
+        })
+      }
+
+      return codigo
+    })
+
+    revalidatePath("/reservas")
+    revalidatePath("/estoque")
+    return { ok: true, message: "Reserva registrada!", codigo }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
 }
 
-/** Confirma a retirada: registra pagamento efetivo e baixa o estoque. */
-export async function confirmarRetirada(
+/**
+ * Ajusta as quantidades da reserva (ex: reservou 10, vai levar 8).
+ * Só é permitido enquanto a reserva estiver em aberto.
+ */
+export async function editarReserva(
   reservaId: string,
-  formaPagamentoEfetiva: "CARTAO" | "PIX" | "DINHEIRO"
+  itens: { itemId: string; quantidade: number }[]
 ): Promise<ActionState> {
-  const session = await requireAuth()
+  await requireAuth()
 
   try {
     await db.$transaction(async (tx) => {
       const reserva = await tx.reserva.findUnique({
         where: { id: reservaId },
-        include: { produto: { include: { modelo: true } } },
+        include: { itens: true },
       })
       if (!reserva) throw new Error("Reserva não encontrada.")
       if (reserva.status !== "RESERVADA") {
-        throw new Error("Esta reserva já foi retirada ou cancelada.")
+        throw new Error("Só é possível alterar reservas em aberto.")
       }
 
-      const baixa = await tx.produto.updateMany({
-        where: {
-          id: reserva.produtoId,
-          estoqueAtual: { gte: reserva.quantidade },
-        },
-        data: { estoqueAtual: { decrement: reserva.quantidade } },
+      for (const alteracao of itens) {
+        const item = reserva.itens.find((i) => i.id === alteracao.itemId)
+        if (!item) continue
+
+        const delta = alteracao.quantidade - item.quantidade
+        if (delta > 0) await segurarEstoque(tx, item.produtoId, delta)
+        if (delta < 0) await liberarEstoque(tx, item.produtoId, -delta)
+
+        if (alteracao.quantidade === 0) {
+          await tx.reservaItem.delete({ where: { id: item.id } })
+        } else {
+          await tx.reservaItem.update({
+            where: { id: item.id },
+            data: { quantidade: alteracao.quantidade },
+          })
+        }
+      }
+
+      const restantes = await tx.reservaItem.count({ where: { reservaId } })
+      if (restantes === 0) {
+        await tx.reserva.update({
+          where: { id: reservaId },
+          data: { status: "CANCELADA" },
+        })
+      }
+    })
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+
+  revalidatePath("/reservas")
+  revalidatePath("/estoque")
+  return { ok: true, message: "Reserva atualizada." }
+}
+
+const pagamentoSchema = z
+  .array(
+    z.object({
+      forma: z.enum(["CARTAO", "PIX", "DINHEIRO"]),
+      valor: z.number().int().positive(),
+    })
+  )
+  .min(1, "Informe ao menos uma forma de pagamento")
+
+/**
+ * Confirma a retirada: baixa o estoque de verdade, gera a venda (com o
+ * pagamento eventualmente dividido) e libera a reserva.
+ */
+export async function confirmarRetirada(
+  reservaId: string,
+  pagamentos: { forma: "CARTAO" | "PIX" | "DINHEIRO"; valor: number }[]
+): Promise<ActionState> {
+  const session = await requireAuth()
+
+  const parsed = pagamentoSchema.safeParse(pagamentos)
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0].message }
+  }
+
+  try {
+    await db.$transaction(async (tx) => {
+      const reserva = await tx.reserva.findUnique({
+        where: { id: reservaId },
+        include: { itens: { include: { produto: { include: { modelo: true } } } } },
       })
-      if (baixa.count === 0) {
+      if (!reserva) throw new Error("Reserva não encontrada.")
+      if (reserva.status !== "RESERVADA") {
+        throw new Error("Esta reserva já foi retirada, cancelada ou encerrada.")
+      }
+      if (reserva.itens.length === 0) {
+        throw new Error("A reserva não tem itens.")
+      }
+
+      const total = reserva.itens.reduce(
+        (acc, i) => acc + i.precoUnitario * i.quantidade,
+        0
+      )
+      const somaPagamentos = parsed.data.reduce((acc, p) => acc + p.valor, 0)
+      if (somaPagamentos !== total) {
         throw new Error(
-          `Estoque insuficiente de ${reserva.produto.modelo.nome} ${reserva.produto.cor} — ${reserva.produto.tamanho}. Disponível: ${reserva.produto.estoqueAtual}`
+          `A soma dos pagamentos (${(somaPagamentos / 100).toFixed(2)}) não bate com o total da reserva (${(total / 100).toFixed(2)}).`
         )
       }
 
-      await tx.movimentacaoEstoque.create({
+      // Forma predominante fica na venda para listagem/filtro; o detalhe vai em VendaPagamento.
+      const predominante = [...parsed.data].sort((a, b) => b.valor - a.valor)[0]
+
+      const venda = await tx.venda.create({
         data: {
-          produtoId: reserva.produtoId,
-          tipo: "SAIDA",
-          origem: "RETIRADA_RESERVA",
-          quantidade: reserva.quantidade,
-          observacao: `Retirada da reserva ${reserva.codigo}`,
+          clienteNome: reserva.nome,
+          congregacaoId: reserva.congregacaoId,
+          eventoId: reserva.eventoId,
+          formaPagamento: predominante.forma,
+          total,
+          observacoes: `Retirada da reserva ${reserva.codigo}`,
           usuarioId: session.user.id,
         },
       })
 
+      let lucroTotal: number | null = 0
+      for (const item of reserva.itens) {
+        // Sai do estoque físico e deixa de ocupar a reserva.
+        const baixa = await tx.produto.updateMany({
+          where: { id: item.produtoId, estoqueAtual: { gte: item.quantidade } },
+          data: {
+            estoqueAtual: { decrement: item.quantidade },
+            estoqueReservado: { decrement: item.quantidade },
+          },
+        })
+        if (baixa.count === 0) {
+          throw new Error(
+            `Estoque insuficiente de ${item.produto.modelo.nome} ${item.produto.cor} — ${item.produto.tamanho}.`
+          )
+        }
+
+        const custo = await custoUnitarioProduto(tx, item.produtoId)
+        await tx.vendaItem.create({
+          data: {
+            vendaId: venda.id,
+            produtoId: item.produtoId,
+            quantidade: item.quantidade,
+            precoUnitario: item.precoUnitario,
+            custoUnitario: custo,
+          },
+        })
+        await tx.movimentacaoEstoque.create({
+          data: {
+            produtoId: item.produtoId,
+            tipo: "SAIDA",
+            origem: "VENDA_RESERVA",
+            quantidade: item.quantidade,
+            vendaId: venda.id,
+            observacao: `Retirada da reserva ${reserva.codigo}`,
+            usuarioId: session.user.id,
+          },
+        })
+
+        if (custo === null) lucroTotal = null
+        else if (lucroTotal !== null) {
+          lucroTotal += (item.precoUnitario - custo) * item.quantidade
+        }
+      }
+
+      await tx.vendaPagamento.createMany({
+        data: parsed.data.map((p) => ({
+          vendaId: venda.id,
+          forma: p.forma,
+          valor: p.valor,
+        })),
+      })
+      await tx.venda.update({ where: { id: venda.id }, data: { lucroTotal } })
       await tx.reserva.update({
         where: { id: reservaId },
-        data: {
-          status: "RETIRADA",
-          formaPagamentoEfetiva,
-          dataRetirada: new Date(),
-        },
+        data: { status: "RETIRADA", dataRetirada: new Date(), vendaId: venda.id },
       })
     })
   } catch (e) {
@@ -131,26 +315,100 @@ export async function confirmarRetirada(
 
   revalidatePath("/reservas")
   revalidatePath("/estoque")
-  return { ok: true, message: "Retirada confirmada e estoque baixado." }
+  revalidatePath("/vendas")
+  revalidatePath("/dashboard")
+  return { ok: true, message: "Retirada confirmada — venda registrada." }
+}
+
+/** Não veio buscar: encerra a reserva e devolve as peças ao disponível. */
+export async function marcarInadimplente(
+  reservaId: string
+): Promise<ActionState> {
+  await requireAuth()
+
+  try {
+    await db.$transaction(async (tx) => {
+      const reserva = await tx.reserva.findUnique({ where: { id: reservaId } })
+      if (!reserva) throw new Error("Reserva não encontrada.")
+      if (reserva.status !== "RESERVADA") {
+        throw new Error("Só reservas em aberto podem virar inadimplentes.")
+      }
+      await liberarItensDaReserva(tx, reservaId)
+      await tx.reserva.update({
+        where: { id: reservaId },
+        data: { status: "INADIMPLENTE" },
+      })
+    })
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+
+  revalidatePath("/reservas")
+  revalidatePath("/estoque")
+  return {
+    ok: true,
+    message: "Reserva marcada como inadimplente — peças devolvidas ao estoque.",
+  }
 }
 
 export async function cancelarReserva(reservaId: string): Promise<ActionState> {
   await requireAuth()
 
-  const reserva = await db.reserva.findUnique({ where: { id: reservaId } })
-  if (!reserva) return { ok: false, message: "Reserva não encontrada." }
-  if (reserva.status === "RETIRADA") {
-    return {
-      ok: false,
-      message: "Reserva já retirada — o estoque já foi baixado.",
-    }
+  try {
+    await db.$transaction(async (tx) => {
+      const reserva = await tx.reserva.findUnique({ where: { id: reservaId } })
+      if (!reserva) throw new Error("Reserva não encontrada.")
+      if (reserva.status !== "RESERVADA") {
+        throw new Error("Esta reserva já foi encerrada.")
+      }
+      await liberarItensDaReserva(tx, reservaId)
+      await tx.reserva.update({
+        where: { id: reservaId },
+        data: { status: "CANCELADA" },
+      })
+    })
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
   }
 
-  await db.reserva.update({
-    where: { id: reservaId },
-    data: { status: "CANCELADA" },
+  revalidatePath("/reservas")
+  revalidatePath("/estoque")
+  return { ok: true, message: "Reserva cancelada — peças devolvidas ao estoque." }
+}
+
+/**
+ * Encerra automaticamente as reservas de eventos que já passaram e não foram
+ * retiradas, devolvendo as peças. Chamado ao abrir a lista de reservas.
+ */
+export async function liberarReservasVencidas(): Promise<number> {
+  // Compara com o início de hoje: um evento que acontece hoje ainda não venceu.
+  const inicioDeHoje = new Date()
+  inicioDeHoje.setHours(0, 0, 0, 0)
+
+  const vencidas = await db.reserva.findMany({
+    where: {
+      status: "RESERVADA",
+      evento: {
+        OR: [
+          { dataFim: { lt: inicioDeHoje } },
+          { dataFim: null, dataInicio: { lt: inicioDeHoje } },
+        ],
+      },
+    },
+    select: { id: true },
+  })
+  if (vencidas.length === 0) return 0
+
+  await db.$transaction(async (tx) => {
+    for (const r of vencidas) {
+      await liberarItensDaReserva(tx, r.id)
+      await tx.reserva.update({
+        where: { id: r.id },
+        data: { status: "INADIMPLENTE" },
+      })
+    }
   })
 
-  revalidatePath("/reservas")
-  return { ok: true, message: "Reserva cancelada." }
+  revalidatePath("/estoque")
+  return vencidas.length
 }

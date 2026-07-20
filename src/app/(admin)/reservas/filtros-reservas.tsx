@@ -60,6 +60,7 @@ export function FiltrosReservas({
         <option value="">Todos os status</option>
         <option value="RESERVADA">Reservada</option>
         <option value="RETIRADA">Retirada</option>
+        <option value="INADIMPLENTE">Inadimplente</option>
         <option value="CANCELADA">Cancelada</option>
       </NativeSelect>
     </div>

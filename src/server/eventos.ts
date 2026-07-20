@@ -15,7 +15,6 @@ const eventoSchema = z.object({
   local: z.string().trim().optional(),
   dataInicio: z.date({ message: "Informe a data de início" }),
   dataFim: z.string().optional(),
-  prazoReserva: z.string().optional(),
   status: z.enum(["PLANEJADO", "ATIVO", "ENCERRADO"]),
 })
 
@@ -42,15 +41,13 @@ export async function salvarEvento(
     local: (formData.get("local") as string) || undefined,
     dataInicio: parseDataLocal((formData.get("dataInicio") as string) ?? ""),
     dataFim: (formData.get("dataFim") as string) || undefined,
-    prazoReserva: (formData.get("prazoReserva") as string) || undefined,
     status: formData.get("status"),
   })
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0].message }
   }
 
-  const { id, nome, descricao, local, dataInicio, dataFim, prazoReserva, status } =
-    parsed.data
+  const { id, nome, descricao, local, dataInicio, dataFim, status } = parsed.data
 
   const data = {
     nome,
@@ -58,7 +55,7 @@ export async function salvarEvento(
     local: local || null,
     dataInicio,
     dataFim: parseDataLocal(dataFim ?? ""),
-    prazoReserva: parseDataLocal(prazoReserva ?? "", true),
+    // prazoReserva é gerenciado em "Configurar link", não aqui.
     status,
   }
 
@@ -83,6 +80,50 @@ export async function salvarEvento(
 
   revalidatePath("/eventos")
   return { ok: true, message: id ? "Evento atualizado." : "Evento criado." }
+}
+
+const linkSchema = z.object({
+  eventoId: z.string().min(1),
+  prazoReserva: z.string().optional(), // datetime-local: "2026-08-20T18:00"
+  produtoIds: z.array(z.string()).min(1, "Escolha ao menos um produto"),
+})
+
+/**
+ * Define quais produtos aparecem no link público do evento e até quando ele
+ * aceita reservas (data + hora). Depois do prazo o link expira sozinho.
+ */
+export async function configurarLinkReserva(
+  _prev: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  await requireAuth()
+
+  const parsed = linkSchema.safeParse({
+    eventoId: formData.get("eventoId"),
+    prazoReserva: (formData.get("prazoReserva") as string) || undefined,
+    produtoIds: formData.getAll("produtoIds").map(String),
+  })
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0].message }
+  }
+  const { eventoId, prazoReserva, produtoIds } = parsed.data
+
+  await db.$transaction(async (tx) => {
+    await tx.evento.update({
+      where: { id: eventoId },
+      data: {
+        // datetime-local não traz fuso: interpretar como horário local.
+        prazoReserva: prazoReserva ? new Date(prazoReserva) : null,
+      },
+    })
+    await tx.eventoProduto.deleteMany({ where: { eventoId } })
+    await tx.eventoProduto.createMany({
+      data: produtoIds.map((produtoId) => ({ eventoId, produtoId })),
+    })
+  })
+
+  revalidatePath("/eventos")
+  return { ok: true, message: "Link de reserva configurado." }
 }
 
 /** Duplica um evento (estrutura, sem vendas/reservas), como pede o PRD. */

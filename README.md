@@ -8,8 +8,12 @@ Sistema de gestão de estoque, vendas e eventos para loja de vestuário jovem (U
 - **Modelos** — cadastro reutilizável com arte (PNG/JPEG/PDF); produtos referenciam o modelo, evitando erro de digitação.
 - **Produtos e Estoque** — SKU = modelo + cor + tamanho; livro-razão de movimentações; venda bloqueada sem saldo.
 - **Pedidos de produção** — encomenda à fábrica com itens por tamanho, arte, fornecedor, preço/peça e total calculado; alerta de atraso; ao confirmar o recebimento (aceitando quantidade divergente) as peças entram no estoque e a SKU é criada se não existir.
-- **Eventos** — cadastro, duplicação e link público de reserva por evento, com prazo de corte.
-- **Reservas** — página pública sem login, código de reserva (R-0001), busca por nome/telefone/código e baixa de estoque só na retirada.
+- **Eventos** — cadastro, duplicação e **gerador de link de reserva**: escolhe quais peças ficam disponíveis (ex.: edição limitada) e até que data/hora o link aceita pedidos; depois disso ele expira sozinho.
+- **Reservas** — página pública sem login com o mesmo formato da venda (multi-item), código de reserva (R-0001) e busca por nome/telefone/código.
+  - A reserva **segura as peças**: `disponível = estoqueAtual − estoqueReservado`, então o admin sabe quanto sobrou para vender no dia.
+  - Na retirada dá para **ajustar as quantidades** (reservou 10, levou 8) e **dividir o pagamento** entre dinheiro, cartão e Pix.
+  - Confirmada a retirada, o estoque baixa e uma **venda é gerada** (entra na receita e no lucro).
+  - **Inadimplente** (não veio buscar) devolve as peças ao disponível; reservas de eventos que já passaram são encerradas automaticamente.
 
 ## Stack
 

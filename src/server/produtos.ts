@@ -84,7 +84,7 @@ export async function excluirProduto(id: string): Promise<ActionState> {
     include: {
       modelo: true,
       _count: {
-        select: { vendaItens: true, movimentacoes: true, reservas: true },
+        select: { vendaItens: true, movimentacoes: true, reservaItens: true },
       },
     },
   })
@@ -103,7 +103,7 @@ export async function excluirProduto(id: string): Promise<ActionState> {
         "Não é possível excluir: o produto tem vendas ou movimentações registradas.",
     }
   }
-  if (produto._count.reservas > 0) {
+  if (produto._count.reservaItens > 0) {
     return {
       ok: false,
       message: "Não é possível excluir: o produto tem reservas vinculadas.",

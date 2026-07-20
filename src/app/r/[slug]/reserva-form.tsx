@@ -1,7 +1,8 @@
 "use client"
 
-import { useActionState, useMemo, useState } from "react"
-import { CheckCircle2, Loader2, MessageCircle } from "lucide-react"
+import { useMemo, useState, useTransition } from "react"
+import { toast } from "sonner"
+import { CheckCircle2, Loader2, MessageCircle, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -9,9 +10,16 @@ import { NativeSelect } from "@/components/ui/native-select"
 import { Textarea } from "@/components/ui/textarea"
 import { formatarBRL } from "@/lib/money"
 import { FORMAS_PAGAMENTO } from "@/lib/constantes"
-import { criarReserva, type ReservaResult } from "@/server/reservas"
+import { criarReserva } from "@/server/reservas"
 
-const inicial: ReservaResult = { ok: false }
+export type ProdutoDisponivel = {
+  id: string
+  label: string
+  precoVenda: number
+  disponivel: number
+}
+
+type ItemForm = { produtoId: string; quantidade: number }
 
 export function ReservaForm({
   eventoId,
@@ -20,27 +28,85 @@ export function ReservaForm({
   congregacoes,
 }: {
   eventoId: string
-  produtos: { id: string; label: string; precoVenda: number }[]
+  produtos: ProdutoDisponivel[]
   setores: { id: string; nome: string }[]
   congregacoes: { id: string; nome: string; setorId: string }[]
 }) {
-  const [state, action, pending] = useActionState(criarReserva, inicial)
+  const [pending, startTransition] = useTransition()
+  const [codigo, setCodigo] = useState<string | null>(null)
+
+  const [nome, setNome] = useState("")
+  const [telefone, setTelefone] = useState("")
+  const [cpf, setCpf] = useState("")
   const [setorId, setSetorId] = useState("")
-  const [produtoId, setProdutoId] = useState("")
-  const [quantidade, setQuantidade] = useState(1)
+  const [congregacaoId, setCongregacaoId] = useState("")
+  const [formaPagamento, setFormaPagamento] = useState("")
+  const [observacoes, setObservacoes] = useState("")
+  const [itens, setItens] = useState<ItemForm[]>([
+    { produtoId: "", quantidade: 1 },
+  ])
 
   const congregacoesDoSetor = useMemo(
     () => congregacoes.filter((c) => c.setorId === setorId),
     [congregacoes, setorId]
   )
 
-  const produto = produtos.find((p) => p.id === produtoId)
-  const total = produto ? produto.precoVenda * quantidade : 0
+  const total = useMemo(
+    () =>
+      itens.reduce((acc, item) => {
+        const p = produtos.find((x) => x.id === item.produtoId)
+        return acc + (p ? p.precoVenda * item.quantidade : 0)
+      }, 0),
+    [itens, produtos]
+  )
 
-  // Tela de confirmação com o código da reserva
-  if (state.ok && state.codigo) {
+  // Soma por produto para não deixar pedir mais do que o disponível somando linhas.
+  const excedeu = itens.some((item) => {
+    if (!item.produtoId) return false
+    const p = produtos.find((x) => x.id === item.produtoId)
+    if (!p) return false
+    const somaDoProduto = itens
+      .filter((i) => i.produtoId === item.produtoId)
+      .reduce((acc, i) => acc + i.quantidade, 0)
+    return somaDoProduto > p.disponivel
+  })
+
+  const podeEnviar =
+    nome.trim().length > 0 &&
+    telefone.trim().length >= 8 &&
+    itens.some((i) => i.produtoId) &&
+    !excedeu
+
+  function atualizarItem(index: number, patch: Partial<ItemForm>) {
+    setItens((prev) =>
+      prev.map((item, i) => (i === index ? { ...item, ...patch } : item))
+    )
+  }
+
+  function enviar() {
+    startTransition(async () => {
+      const res = await criarReserva({
+        eventoId,
+        nome: nome.trim(),
+        telefone: telefone.trim(),
+        cpf: cpf.trim() || undefined,
+        congregacaoId: congregacaoId || undefined,
+        formaPagamento: formaPagamento
+          ? (formaPagamento as "CARTAO" | "PIX" | "DINHEIRO")
+          : undefined,
+        observacoes: observacoes.trim() || undefined,
+        itens: itens
+          .filter((i) => i.produtoId)
+          .map((i) => ({ produtoId: i.produtoId, quantidade: i.quantidade })),
+      })
+      if (res.ok && res.codigo) setCodigo(res.codigo)
+      else toast.error(res.message)
+    })
+  }
+
+  if (codigo) {
     const mensagem = encodeURIComponent(
-      `Minha reserva na UNI STORE está confirmada! Código: ${state.codigo}`
+      `Minha reserva na UNI STORE está confirmada! Código: ${codigo}`
     )
     return (
       <div className="rounded-2xl bg-white p-8 text-center">
@@ -52,7 +118,11 @@ export function ReservaForm({
           Guarde seu código e apresente na retirada:
         </p>
         <p className="my-5 rounded-xl bg-neutral-950 py-4 font-mono text-3xl font-bold tracking-widest text-white">
-          {state.codigo}
+          {codigo}
+        </p>
+        <p className="mb-5 text-sm text-neutral-600">
+          Suas peças ficam separadas. Total a pagar na retirada:{" "}
+          <strong>{formatarBRL(total)}</strong>
         </p>
         <a
           href={`https://wa.me/?text=${mensagem}`}
@@ -62,20 +132,19 @@ export function ReservaForm({
         >
           <MessageCircle className="size-4" /> Salvar no WhatsApp
         </a>
-        <p className="mt-5 text-xs text-neutral-400">
-          O pagamento é feito presencialmente na retirada.
-        </p>
       </div>
     )
   }
 
   return (
-    <form action={action} className="space-y-5 rounded-2xl bg-white p-6">
-      <input type="hidden" name="eventoId" value={eventoId} />
-
+    <div className="space-y-5 rounded-2xl bg-white p-6">
       <div className="space-y-2">
         <Label htmlFor="r-nome">Nome completo *</Label>
-        <Input id="r-nome" name="nome" required />
+        <Input
+          id="r-nome"
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+        />
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -83,15 +152,21 @@ export function ReservaForm({
           <Label htmlFor="r-tel">Telefone *</Label>
           <Input
             id="r-tel"
-            name="telefone"
             inputMode="tel"
             placeholder="(00) 00000-0000"
-            required
+            value={telefone}
+            onChange={(e) => setTelefone(e.target.value)}
           />
         </div>
         <div className="space-y-2">
           <Label htmlFor="r-cpf">CPF</Label>
-          <Input id="r-cpf" name="cpf" inputMode="numeric" placeholder="opcional" />
+          <Input
+            id="r-cpf"
+            inputMode="numeric"
+            placeholder="opcional"
+            value={cpf}
+            onChange={(e) => setCpf(e.target.value)}
+          />
         </div>
       </div>
 
@@ -101,7 +176,10 @@ export function ReservaForm({
           <NativeSelect
             id="r-setor"
             value={setorId}
-            onChange={(e) => setSetorId(e.target.value)}
+            onChange={(e) => {
+              setSetorId(e.target.value)
+              setCongregacaoId("")
+            }}
           >
             <option value="">Não informar</option>
             {setores.map((s) => (
@@ -113,7 +191,12 @@ export function ReservaForm({
         </div>
         <div className="space-y-2">
           <Label htmlFor="r-cong">Congregação</Label>
-          <NativeSelect id="r-cong" name="congregacaoId" disabled={!setorId}>
+          <NativeSelect
+            id="r-cong"
+            value={congregacaoId}
+            onChange={(e) => setCongregacaoId(e.target.value)}
+            disabled={!setorId}
+          >
             <option value="">
               {setorId ? "Não informar" : "Escolha o setor"}
             </option>
@@ -126,83 +209,133 @@ export function ReservaForm({
         </div>
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="r-produto">Produto *</Label>
-        <NativeSelect
-          id="r-produto"
-          name="produtoId"
-          value={produtoId}
-          onChange={(e) => setProdutoId(e.target.value)}
-          required
+      {/* Peças */}
+      <div className="space-y-3">
+        <Label>Peças *</Label>
+        {itens.map((item, index) => {
+          const produto = produtos.find((p) => p.id === item.produtoId)
+          const somaDoProduto = produto
+            ? itens
+                .filter((i) => i.produtoId === item.produtoId)
+                .reduce((acc, i) => acc + i.quantidade, 0)
+            : 0
+          const passou = produto && somaDoProduto > produto.disponivel
+          return (
+            <div key={index} className="space-y-1">
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <NativeSelect
+                    value={item.produtoId}
+                    onChange={(e) =>
+                      atualizarItem(index, { produtoId: e.target.value })
+                    }
+                    aria-label={`Peça ${index + 1}`}
+                  >
+                    <option value="" disabled>
+                      Escolha a peça
+                    </option>
+                    {produtos.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label} · {formatarBRL(p.precoVenda)} ({p.disponivel}{" "}
+                        disp.)
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </div>
+                <div className="w-20">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={produto?.disponivel}
+                    value={item.quantidade}
+                    onChange={(e) =>
+                      atualizarItem(index, {
+                        quantidade: Math.max(
+                          1,
+                          Math.trunc(Number(e.target.value) || 1)
+                        ),
+                      })
+                    }
+                    aria-label={`Quantidade da peça ${index + 1}`}
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Remover peça"
+                  disabled={itens.length === 1}
+                  onClick={() =>
+                    setItens((prev) => prev.filter((_, i) => i !== index))
+                  }
+                >
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
+              {passou && (
+                <p className="text-sm text-destructive">
+                  Só há {produto.disponivel} disponível(is) desta peça.
+                </p>
+              )}
+            </div>
+          )
+        })}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            setItens((prev) => [...prev, { produtoId: "", quantidade: 1 }])
+          }
         >
-          <option value="" disabled>
-            Escolha a peça
-          </option>
-          {produtos.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label} · {formatarBRL(p.precoVenda)}
+          <Plus className="size-4" /> Adicionar peça
+        </Button>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="r-pag">Pagamento pretendido</Label>
+        <NativeSelect
+          id="r-pag"
+          value={formaPagamento}
+          onChange={(e) => setFormaPagamento(e.target.value)}
+        >
+          <option value="">Decido na retirada</option>
+          {FORMAS_PAGAMENTO.map((f) => (
+            <option key={f.value} value={f.value}>
+              {f.label}
             </option>
           ))}
         </NativeSelect>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <Label htmlFor="r-qtd">Quantidade *</Label>
-          <Input
-            id="r-qtd"
-            name="quantidade"
-            type="number"
-            min={1}
-            value={quantidade}
-            onChange={(e) =>
-              setQuantidade(Math.max(1, Math.trunc(Number(e.target.value) || 1)))
-            }
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="r-pag">Pagamento pretendido *</Label>
-          <NativeSelect id="r-pag" name="formaPagamento" defaultValue="" required>
-            <option value="" disabled>
-              Escolha
-            </option>
-            {FORMAS_PAGAMENTO.map((f) => (
-              <option key={f.value} value={f.value}>
-                {f.label}
-              </option>
-            ))}
-          </NativeSelect>
-        </div>
-      </div>
-
       <div className="space-y-2">
         <Label htmlFor="r-obs">Observações</Label>
-        <Textarea id="r-obs" name="observacoes" rows={2} />
+        <Textarea
+          id="r-obs"
+          rows={2}
+          value={observacoes}
+          onChange={(e) => setObservacoes(e.target.value)}
+        />
       </div>
 
       {total > 0 && (
         <div className="flex items-center justify-between rounded-xl bg-neutral-950 px-4 py-3 text-white">
           <span className="text-xs tracking-widest text-neutral-400 uppercase">
-            Total a pagar na retirada
+            Total na retirada
           </span>
           <span className="text-xl font-bold">{formatarBRL(total)}</span>
         </div>
       )}
 
-      {!state.ok && state.message && (
-        <p className="text-sm font-medium text-destructive">{state.message}</p>
-      )}
-
       <Button
-        type="submit"
         size="lg"
         className="w-full rounded-xl"
-        disabled={pending}
+        onClick={enviar}
+        disabled={pending || !podeEnviar}
       >
         {pending && <Loader2 className="animate-spin" />}
         Reservar
       </Button>
-    </form>
+    </div>
   )
 }

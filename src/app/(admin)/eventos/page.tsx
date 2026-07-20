@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { CalendarDays, Copy, MapPin, Plus, Ticket } from "lucide-react"
+import { CalendarDays, Link2, MapPin, Plus, Ticket } from "lucide-react"
 import { db } from "@/lib/db"
 import { requireAuth } from "@/lib/auth"
 import { formatarBRL } from "@/lib/money"
@@ -9,23 +9,49 @@ import { PageHeader } from "@/components/layout/page-header"
 import { EventoDialog } from "./evento-dialog"
 import { CopiarLink } from "./copiar-link"
 import { DuplicarEventoButton } from "./duplicar-evento"
+import { LinkDialog } from "./link-dialog"
 
 export const metadata = { title: "Eventos — UNI STORE" }
 
-function paraInput(data: Date | null): string {
+function paraInputData(data: Date | null): string {
   return data ? data.toISOString().slice(0, 10) : ""
+}
+
+/** datetime-local espera "YYYY-MM-DDTHH:mm" no horário local. */
+function paraInputDataHora(data: Date | null): string {
+  if (!data) return ""
+  const local = new Date(data.getTime() - data.getTimezoneOffset() * 60000)
+  return local.toISOString().slice(0, 16)
 }
 
 export default async function EventosPage() {
   await requireAuth()
 
-  const eventos = await db.evento.findMany({
-    include: {
-      _count: { select: { vendas: true, reservas: true } },
-      vendas: { select: { total: true } },
-    },
-    orderBy: { dataInicio: "desc" },
-  })
+  const [eventos, produtos] = await Promise.all([
+    db.evento.findMany({
+      include: {
+        _count: { select: { vendas: true, reservas: true } },
+        vendas: { select: { total: true } },
+        produtos: { select: { produtoId: true } },
+        reservas: {
+          where: { status: "RESERVADA" },
+          select: { itens: { select: { quantidade: true } } },
+        },
+      },
+      orderBy: { dataInicio: "desc" },
+    }),
+    db.produto.findMany({
+      include: { modelo: true },
+      orderBy: [{ modelo: { nome: "asc" } }, { cor: "asc" }, { tamanho: "asc" }],
+    }),
+  ])
+
+  const opcoesProduto = produtos.map((p) => ({
+    id: p.id,
+    label: `${p.modelo.nome} ${p.cor} — ${p.tamanho}`,
+    precoVenda: p.precoVenda,
+    disponivel: p.estoqueAtual - p.estoqueReservado,
+  }))
 
   return (
     <div className="mx-auto max-w-7xl">
@@ -55,15 +81,21 @@ export default async function EventosPage() {
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
           {eventos.map((e) => {
             const receita = e.vendas.reduce((a, v) => a + v.total, 0)
+            const pecasReservadas = e.reservas.reduce(
+              (a, r) => a + r.itens.reduce((s, i) => s + i.quantidade, 0),
+              0
+            )
             const encerrado = e.status === "ENCERRADO"
+            const linkExpirado =
+              e.prazoReserva !== null && e.prazoReserva < new Date()
+            const produtosNoLink = e.produtos.length
+
             return (
               <div key={e.id} className="card-surface p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="font-semibold text-neutral-900">
-                        {e.nome}
-                      </h2>
+                      <h2 className="font-semibold text-neutral-900">{e.nome}</h2>
                       <span
                         className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
                           e.status === "ATIVO"
@@ -90,16 +122,32 @@ export default async function EventosPage() {
                         </span>
                       )}
                     </p>
-                    {e.prazoReserva && (
-                      <p className="mt-1 text-xs text-neutral-400">
-                        Reservas até{" "}
-                        {e.prazoReserva.toLocaleDateString("pt-BR")}
-                      </p>
-                    )}
                   </div>
                 </div>
 
-                <div className="mt-4 grid grid-cols-3 gap-3 border-t border-neutral-100 pt-4">
+                {/* Estado do link público */}
+                <div
+                  className={`mt-4 rounded-xl px-3 py-2.5 text-xs ${
+                    produtosNoLink === 0
+                      ? "bg-neutral-50 text-neutral-500"
+                      : linkExpirado
+                        ? "bg-destructive/5 text-destructive"
+                        : "bg-neutral-100 text-neutral-700"
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <Link2 className="size-3.5" />
+                    {produtosNoLink === 0
+                      ? "Link sem peças configuradas — ninguém consegue reservar"
+                      : linkExpirado
+                        ? `Link expirou em ${e.prazoReserva?.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}`
+                        : e.prazoReserva
+                          ? `${produtosNoLink} peça(s) no link · aceita até ${e.prazoReserva.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}`
+                          : `${produtosNoLink} peça(s) no link · sem prazo de expiração`}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid grid-cols-4 gap-3 border-t border-neutral-100 pt-4">
                   <div>
                     <p className="eyebrow mb-0.5">Vendas</p>
                     <p className="text-sm font-bold">{e._count.vendas}</p>
@@ -109,12 +157,28 @@ export default async function EventosPage() {
                     <p className="text-sm font-bold">{e._count.reservas}</p>
                   </div>
                   <div>
+                    <p className="eyebrow mb-0.5">Peças presas</p>
+                    <p className="text-sm font-bold">{pecasReservadas}</p>
+                  </div>
+                  <div>
                     <p className="eyebrow mb-0.5">Receita</p>
                     <p className="text-sm font-bold">{formatarBRL(receita)}</p>
                   </div>
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-2">
+                  <LinkDialog
+                    eventoId={e.id}
+                    eventoNome={e.nome}
+                    produtos={opcoesProduto}
+                    selecionadosIniciais={e.produtos.map((p) => p.produtoId)}
+                    prazoInicial={paraInputDataHora(e.prazoReserva)}
+                    trigger={
+                      <Button size="sm" className="rounded-xl">
+                        <Link2 className="size-4" /> Configurar link
+                      </Button>
+                    }
+                  />
                   <CopiarLink slug={e.slug} />
                   <Button
                     variant="outline"
@@ -129,7 +193,7 @@ export default async function EventosPage() {
                       />
                     }
                   >
-                    <Ticket className="size-4" /> Abrir página
+                    <Ticket className="size-4" /> Abrir
                   </Button>
                   <Button
                     variant="outline"
@@ -138,7 +202,7 @@ export default async function EventosPage() {
                     nativeButton={false}
                     render={<Link href={`/reservas?evento=${e.id}`} />}
                   >
-                    Ver reservas
+                    Reservas
                   </Button>
                   <EventoDialog
                     evento={{
@@ -146,9 +210,9 @@ export default async function EventosPage() {
                       nome: e.nome,
                       descricao: e.descricao,
                       local: e.local,
-                      dataInicio: paraInput(e.dataInicio),
-                      dataFim: paraInput(e.dataFim),
-                      prazoReserva: paraInput(e.prazoReserva),
+                      dataInicio: paraInputData(e.dataInicio),
+                      dataFim: paraInputData(e.dataFim),
+                      prazoReserva: paraInputData(e.prazoReserva),
                       status: e.status,
                     }}
                     trigger={

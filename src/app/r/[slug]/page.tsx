@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation"
-import { CalendarDays, MapPin } from "lucide-react"
+import { CalendarDays, Clock, MapPin } from "lucide-react"
 import { db } from "@/lib/db"
 import { ReservaForm } from "./reserva-form"
 
@@ -15,6 +15,15 @@ export async function generateMetadata({
   return { title: evento ? `Reservar — ${evento.nome}` : "Reserva — UNI STORE" }
 }
 
+function Aviso({ titulo, texto }: { titulo: string; texto: string }) {
+  return (
+    <div className="rounded-2xl bg-white p-8 text-center">
+      <h2 className="text-lg font-semibold text-neutral-900">{titulo}</h2>
+      <p className="mt-2 text-sm text-neutral-500">{texto}</p>
+    </div>
+  )
+}
+
 export default async function ReservaPublicaPage({
   params,
 }: {
@@ -22,22 +31,33 @@ export default async function ReservaPublicaPage({
 }) {
   const { slug } = await params
 
-  const evento = await db.evento.findUnique({ where: { slug } })
+  const evento = await db.evento.findUnique({
+    where: { slug },
+    include: {
+      produtos: {
+        include: { produto: { include: { modelo: true } } },
+      },
+    },
+  })
   if (!evento) notFound()
 
-  const [produtos, setores, congregacoes] = await Promise.all([
-    db.produto.findMany({
-      where: { estoqueAtual: { gt: 0 } },
-      include: { modelo: true },
-      orderBy: [{ modelo: { nome: "asc" } }, { cor: "asc" }, { tamanho: "asc" }],
-    }),
+  const [setores, congregacoes] = await Promise.all([
     db.setor.findMany({ where: { ativo: true }, orderBy: { nome: "asc" } }),
     db.congregacao.findMany({ where: { ativo: true }, orderBy: { nome: "asc" } }),
   ])
 
-  const fechado =
-    evento.status === "ENCERRADO" ||
-    (evento.prazoReserva !== null && evento.prazoReserva < new Date())
+  const expirado = evento.prazoReserva !== null && evento.prazoReserva < new Date()
+  const encerrado = evento.status === "ENCERRADO"
+
+  // Só entram peças escolhidas para este evento e que ainda têm saldo livre.
+  const disponiveis = evento.produtos
+    .map((ep) => ({
+      id: ep.produto.id,
+      label: `${ep.produto.modelo.nome} ${ep.produto.cor} — ${ep.produto.tamanho}`,
+      precoVenda: ep.produto.precoVenda,
+      disponivel: ep.produto.estoqueAtual - ep.produto.estoqueReservado,
+    }))
+    .filter((p) => p.disponivel > 0)
 
   return (
     <main className="flex min-h-screen flex-col bg-neutral-950 px-4 py-10">
@@ -66,35 +86,30 @@ export default async function ReservaPublicaPage({
           </div>
         </div>
 
-        {fechado ? (
-          <div className="rounded-2xl bg-white p-8 text-center">
-            <h2 className="text-lg font-semibold text-neutral-900">
-              Reservas encerradas
-            </h2>
-            <p className="mt-2 text-sm text-neutral-500">
-              {evento.status === "ENCERRADO"
-                ? "Este evento já foi encerrado."
-                : `O prazo para reservas terminou em ${evento.prazoReserva?.toLocaleDateString("pt-BR")}.`}
-            </p>
-          </div>
-        ) : produtos.length === 0 ? (
-          <div className="rounded-2xl bg-white p-8 text-center">
-            <h2 className="text-lg font-semibold text-neutral-900">
-              Sem produtos disponíveis
-            </h2>
-            <p className="mt-2 text-sm text-neutral-500">
-              No momento não há peças em estoque para reserva. Tente novamente
-              mais tarde.
-            </p>
-          </div>
+        {encerrado ? (
+          <Aviso
+            titulo="Reservas encerradas"
+            texto="Este evento já foi encerrado."
+          />
+        ) : expirado ? (
+          <Aviso
+            titulo="Link expirado"
+            texto={`O prazo para reservas terminou em ${evento.prazoReserva?.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}.`}
+          />
+        ) : evento.produtos.length === 0 ? (
+          <Aviso
+            titulo="Reservas ainda não liberadas"
+            texto="As peças deste evento ainda não foram disponibilizadas para reserva. Tente novamente em breve."
+          />
+        ) : disponiveis.length === 0 ? (
+          <Aviso
+            titulo="Peças esgotadas"
+            texto="Todas as peças deste evento já foram reservadas."
+          />
         ) : (
           <ReservaForm
             eventoId={evento.id}
-            produtos={produtos.map((p) => ({
-              id: p.id,
-              label: `${p.modelo.nome} ${p.cor} — ${p.tamanho}`,
-              precoVenda: p.precoVenda,
-            }))}
+            produtos={disponiveis}
             setores={setores.map((s) => ({ id: s.id, nome: s.nome }))}
             congregacoes={congregacoes.map((c) => ({
               id: c.id,
@@ -104,10 +119,15 @@ export default async function ReservaPublicaPage({
           />
         )}
 
-        {evento.prazoReserva && !fechado && (
-          <p className="mt-6 text-center text-xs text-neutral-500">
-            Reservas até {evento.prazoReserva.toLocaleDateString("pt-BR")}. O
-            pagamento é feito na retirada, no evento.
+        {evento.prazoReserva && !expirado && !encerrado && (
+          <p className="mt-6 flex items-center justify-center gap-1.5 text-center text-xs text-neutral-500">
+            <Clock className="size-3.5" />
+            Reservas até{" "}
+            {evento.prazoReserva.toLocaleString("pt-BR", {
+              dateStyle: "short",
+              timeStyle: "short",
+            })}
+            . O pagamento é feito na retirada.
           </p>
         )}
       </div>

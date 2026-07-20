@@ -64,17 +64,23 @@ async function aplicarItens(
     })
     if (!produto) throw new Error("Produto não encontrado.")
 
-    const baixa = await tx.produto.updateMany({
-      where: { id: item.produtoId, estoqueAtual: { gte: item.quantidade } },
-      data: { estoqueAtual: { decrement: item.quantidade } },
-    })
-    if (baixa.count === 0) {
+    // Venda direta só pode consumir o que não está preso em reservas.
+    const baixa = await tx.$executeRaw`
+      UPDATE "Produto"
+      SET "estoqueAtual" = "estoqueAtual" - ${item.quantidade}
+      WHERE "id" = ${item.produtoId}
+        AND "estoqueAtual" - "estoqueReservado" >= ${item.quantidade}
+    `
+    if (baixa === 0) {
       const atual = await tx.produto.findUnique({
         where: { id: item.produtoId },
-        select: { estoqueAtual: true },
+        select: { estoqueAtual: true, estoqueReservado: true },
       })
+      const disponivel = atual
+        ? atual.estoqueAtual - atual.estoqueReservado
+        : 0
       throw new Error(
-        `Estoque insuficiente de ${produto.modelo.nome} ${produto.cor} — ${produto.tamanho}. Disponível: ${atual?.estoqueAtual ?? 0}`
+        `Estoque insuficiente de ${produto.modelo.nome} ${produto.cor} — ${produto.tamanho}. Disponível: ${disponivel}`
       )
     }
 
@@ -197,6 +203,11 @@ export async function criarVenda(payload: VendaPayload): Promise<VendaResult> {
         where: { id: venda.id },
         data: { total, lucroTotal },
       })
+      // Venda direta usa uma forma só, mas grava como pagamento para manter o
+      // mesmo formato das retiradas de reserva (que podem ser divididas).
+      await tx.vendaPagamento.create({
+        data: { vendaId: venda.id, forma: dados.formaPagamento, valor: total },
+      })
       return venda.id
     })
 
@@ -249,6 +260,11 @@ export async function editarVenda(
           total,
           lucroTotal,
         },
+      })
+      // Refaz o pagamento com o novo total.
+      await tx.vendaPagamento.deleteMany({ where: { vendaId } })
+      await tx.vendaPagamento.create({
+        data: { vendaId, forma: dados.formaPagamento, valor: total },
       })
     })
 

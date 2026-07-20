@@ -85,12 +85,15 @@ model Produto {
   custoReferencia Int? // centavos
   descricao       String?
   estoqueAtual    Int      @default(0) // cache; fonte de verdade é MovimentacaoEstoque
+  // Peças presas por reservas em aberto. Disponível = estoqueAtual - estoqueReservado.
+  estoqueReservado Int     @default(0)
   criadoEm        DateTime @default(now())
   atualizadoEm    DateTime @updatedAt
 
   movimentacoes MovimentacaoEstoque[]
   vendaItens    VendaItem[]
-  reservas      Reserva[]
+  reservaItens  ReservaItem[]
+  eventoProdutos EventoProduto[]
 
   @@unique([modeloId, cor, tamanho])
 }
@@ -110,6 +113,7 @@ enum OrigemMovimentacao {
   AJUSTE_MANUAL
   RETIRADA_RESERVA
   CANCELAMENTO_RESERVA
+  VENDA_RESERVA // saída gerada pela retirada de uma reserva
 }
 
 model MovimentacaoEstoque {
@@ -162,6 +166,7 @@ model Evento {
   vendas   Venda[]
   reservas Reserva[]
   pedidos  PedidoProducao[]
+  produtos EventoProduto[]
 }
 
 model Venda {
@@ -186,6 +191,8 @@ model Venda {
 
   itens         VendaItem[]
   movimentacoes MovimentacaoEstoque[]
+  pagamentos    VendaPagamento[]
+  reserva       Reserva?
 
   @@index([data])
 }
@@ -207,30 +214,65 @@ enum StatusReserva {
   RESERVADA
   RETIRADA
   CANCELADA
+  INADIMPLENTE // não veio buscar; as peças voltam a ficar disponíveis
 }
 
 /// Reserva feita pelo cliente no link público do evento; baixa o estoque só na retirada.
 model Reserva {
-  id                    String          @id @default(cuid())
-  codigo                String          @unique // ex: R-0042
-  nome                  String
-  telefone              String
-  cpf                   String?
-  congregacaoId         String?
-  congregacao           Congregacao?    @relation(fields: [congregacaoId], references: [id])
-  eventoId              String
-  evento                Evento          @relation(fields: [eventoId], references: [id])
-  produtoId             String
-  produto               Produto         @relation(fields: [produtoId], references: [id])
-  quantidade            Int
-  formaPagamento        FormaPagamento // pretendida
-  formaPagamentoEfetiva FormaPagamento? // registrada na retirada
-  status                StatusReserva   @default(RESERVADA)
-  observacoes           String?
-  dataReserva           DateTime        @default(now())
-  dataRetirada          DateTime?
+  id             String          @id @default(cuid())
+  codigo         String          @unique // ex: R-0042
+  nome           String
+  telefone       String
+  cpf            String?
+  congregacaoId  String?
+  congregacao    Congregacao?    @relation(fields: [congregacaoId], references: [id])
+  eventoId       String
+  evento         Evento          @relation(fields: [eventoId], references: [id])
+  formaPagamento FormaPagamento? // pretendida; a efetiva vai na venda gerada
+  status         StatusReserva   @default(RESERVADA)
+  observacoes    String?
+  dataReserva    DateTime        @default(now())
+  dataRetirada   DateTime?
+  vendaId        String?         @unique // venda gerada na retirada
+  venda          Venda?          @relation(fields: [vendaId], references: [id], onDelete: SetNull)
+
+  itens ReservaItem[]
 
   @@index([eventoId, status])
+}
+
+model ReservaItem {
+  id            String  @id @default(cuid())
+  reservaId     String
+  reserva       Reserva @relation(fields: [reservaId], references: [id], onDelete: Cascade)
+  produtoId     String
+  produto       Produto @relation(fields: [produtoId], references: [id])
+  quantidade    Int
+  precoUnitario Int // centavos; snapshot no momento da reserva
+
+  @@index([reservaId])
+}
+
+/// Produtos oferecidos no link público de reserva de um evento.
+model EventoProduto {
+  id        String  @id @default(cuid())
+  eventoId  String
+  evento    Evento  @relation(fields: [eventoId], references: [id], onDelete: Cascade)
+  produtoId String
+  produto   Produto @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+
+  @@unique([eventoId, produtoId])
+}
+
+/// Permite dividir o pagamento (parte dinheiro, parte cartão, parte Pix).
+model VendaPagamento {
+  id      String         @id @default(cuid())
+  vendaId String
+  venda   Venda          @relation(fields: [vendaId], references: [id], onDelete: Cascade)
+  forma   FormaPagamento
+  valor   Int // centavos
+
+  @@index([vendaId])
 }
 
 enum StatusPedidoProducao {

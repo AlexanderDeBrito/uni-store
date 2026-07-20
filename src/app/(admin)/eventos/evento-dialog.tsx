@@ -109,15 +109,6 @@ export function EventoDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label htmlFor="ev-prazo">Prazo de reservas</Label>
-              <Input
-                id="ev-prazo"
-                name="prazoReserva"
-                type="date"
-                defaultValue={evento?.prazoReserva ?? ""}
-              />
-            </div>
-            <div className="space-y-2">
               <Label htmlFor="ev-status">Status *</Label>
               <NativeSelect
                 id="ev-status"
