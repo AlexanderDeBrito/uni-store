@@ -2,7 +2,8 @@
 
 import { useActionState, useEffect, useState } from "react"
 import { toast } from "sonner"
-import { Loader2, Upload } from "lucide-react"
+import { Loader2 } from "lucide-react"
+import { UploadArquivo } from "@/components/upload-arquivo"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -78,30 +79,15 @@ export function ModeloDialog({
               defaultValue={modelo?.descricao ?? ""}
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="mod-arquivo">
-              Arte do modelo (PNG, JPEG ou PDF)
-            </Label>
-            <Input
-              id="mod-arquivo"
-              name="arquivo"
-              type="file"
-              accept="image/png,image/jpeg,image/webp,application/pdf"
-              disabled={!uploadDisponivel}
-              className="file:mr-3 file:rounded-md file:border-0 file:bg-neutral-100 file:px-3 file:py-1 file:text-sm"
-            />
-            {modelo?.arquivoNome && (
-              <p className="flex items-center gap-1.5 text-xs text-neutral-500">
-                <Upload className="size-3" /> Atual: {modelo.arquivoNome} —
-                enviar outro substitui.
-              </p>
-            )}
-            {!uploadDisponivel && (
-              <p className="text-xs text-destructive">
-                Upload indisponível: falta configurar SUPABASE_SERVICE_ROLE_KEY.
-              </p>
-            )}
-          </div>
+          <UploadArquivo
+            pasta="modelos"
+            rotulo="Arte do modelo (PNG, JPEG ou PDF)"
+            campoUrl="arquivoUrl"
+            campoNome="arquivoNome"
+            campoTipo="arquivoTipo"
+            disponivel={uploadDisponivel}
+            arquivoAtual={modelo?.arquivoNome}
+          />
           <div className="flex items-center gap-3">
             <Switch
               id="mod-ativo"

@@ -12,12 +12,6 @@ export const TIPOS_ACEITOS = [
 
 export const TAMANHO_MAXIMO = 10 * 1024 * 1024 // 10 MB
 
-export type ArquivoSalvo = {
-  url: string
-  nome: string
-  tipo: string
-}
-
 /** O upload só funciona com a service role key configurada (nunca exposta ao browser). */
 export function storageConfigurado(): boolean {
   return Boolean(
@@ -41,21 +35,24 @@ function nomeSeguro(nome: string): string {
     .slice(-80)
 }
 
-/**
- * Envia o arquivo ao bucket e devolve a URL pública.
- * Retorna null quando não há arquivo; lança Error em falha de validação/upload.
- */
-export async function salvarArquivo(
-  arquivo: File | null,
-  pasta: string
-): Promise<ArquivoSalvo | null> {
-  if (!arquivo || arquivo.size === 0) return null
+export type UploadAssinado = {
+  signedUrl: string
+  publicUrl: string
+}
 
-  if (!TIPOS_ACEITOS.includes(arquivo.type)) {
+/**
+ * Cria uma URL assinada para o navegador enviar o arquivo direto ao Supabase.
+ *
+ * Enviar via Server Action esbarraria no limite de corpo do Next (1 MB) e no
+ * da Vercel (~4,5 MB); indo direto, só vale o limite do bucket (10 MB).
+ */
+export async function criarUploadAssinado(
+  nomeArquivo: string,
+  tipo: string,
+  pasta: string
+): Promise<UploadAssinado> {
+  if (!TIPOS_ACEITOS.includes(tipo)) {
     throw new Error("Formato inválido. Use PNG, JPEG, WEBP ou PDF.")
-  }
-  if (arquivo.size > TAMANHO_MAXIMO) {
-    throw new Error("Arquivo muito grande. O limite é 10 MB.")
   }
   if (!storageConfigurado()) {
     throw new Error(
@@ -63,15 +60,30 @@ export async function salvarArquivo(
     )
   }
 
-  const caminho = `${pasta}/${Date.now()}-${nomeSeguro(arquivo.name)}`
-  const bytes = Buffer.from(await arquivo.arrayBuffer())
+  const caminho = `${pasta}/${Date.now()}-${nomeSeguro(nomeArquivo)}`
+  const supabase = client()
 
-  const { error } = await client()
-    .storage.from(BUCKET)
-    .upload(caminho, bytes, { contentType: arquivo.type, upsert: false })
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUploadUrl(caminho)
+  if (error || !data) {
+    throw new Error(`Falha ao preparar o upload: ${error?.message ?? "erro"}`)
+  }
 
-  if (error) throw new Error(`Falha no upload: ${error.message}`)
+  const base = process.env.SUPABASE_URL as string
+  const signedUrl = data.signedUrl.startsWith("http")
+    ? data.signedUrl
+    : `${base}${data.signedUrl}`
 
-  const { data } = client().storage.from(BUCKET).getPublicUrl(caminho)
-  return { url: data.publicUrl, nome: arquivo.name, tipo: arquivo.type }
+  return {
+    signedUrl,
+    publicUrl: `${base}/storage/v1/object/public/${BUCKET}/${caminho}`,
+  }
+}
+
+/** Garante que a URL gravada no banco veio mesmo do nosso bucket. */
+export function urlDoBucket(url: string): boolean {
+  const base = process.env.SUPABASE_URL
+  if (!base) return false
+  return url.startsWith(`${base}/storage/v1/object/public/${BUCKET}/`)
 }

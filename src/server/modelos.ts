@@ -5,7 +5,7 @@ import { z } from "zod"
 import { Prisma } from "@prisma/client"
 import { db } from "@/lib/db"
 import { requireAuth } from "@/lib/auth"
-import { salvarArquivo } from "@/lib/storage"
+import { urlDoBucket } from "@/lib/storage"
 import type { ActionState } from "./action-state"
 
 const modeloSchema = z.object({
@@ -32,21 +32,20 @@ export async function salvarModelo(
   }
   const { id, nome, descricao, ativo } = parsed.data
 
-  let arquivo
-  try {
-    arquivo = await salvarArquivo(formData.get("arquivo") as File | null, "modelos")
-  } catch (e) {
-    return { ok: false, message: (e as Error).message }
+  // O arquivo já foi enviado direto ao Storage pelo navegador; aqui chega só a URL.
+  const arquivoUrl = (formData.get("arquivoUrl") as string) || ""
+  if (arquivoUrl && !urlDoBucket(arquivoUrl)) {
+    return { ok: false, message: "Arquivo inválido." }
   }
 
   const dados: Prisma.ModeloUncheckedCreateInput = {
     nome,
     descricao: descricao || null,
     ativo,
-    ...(arquivo && {
-      arquivoUrl: arquivo.url,
-      arquivoNome: arquivo.nome,
-      arquivoTipo: arquivo.tipo,
+    ...(arquivoUrl && {
+      arquivoUrl,
+      arquivoNome: (formData.get("arquivoNome") as string) || null,
+      arquivoTipo: (formData.get("arquivoTipo") as string) || null,
     }),
   }
 

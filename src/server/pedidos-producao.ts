@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { db } from "@/lib/db"
 import { requireAuth } from "@/lib/auth"
-import { salvarArquivo } from "@/lib/storage"
+import { urlDoBucket } from "@/lib/storage"
 import { parseBRL } from "@/lib/money"
 import { parseDataLocal } from "@/lib/data"
 import type { ActionState } from "./action-state"
@@ -66,11 +66,10 @@ export async function criarPedido(
   }
   const dados = parsed.data
 
-  let arte
-  try {
-    arte = await salvarArquivo(formData.get("arte") as File | null, "pedidos")
-  } catch (e) {
-    return { ok: false, message: (e as Error).message }
+  // A arte já foi enviada direto ao Storage pelo navegador; aqui chega só a URL.
+  const arteUrl = (formData.get("arteUrl") as string) || ""
+  if (arteUrl && !urlDoBucket(arteUrl)) {
+    return { ok: false, message: "Arquivo de arte inválido." }
   }
 
   await db.pedidoProducao.create({
@@ -83,10 +82,10 @@ export async function criarPedido(
       precoPorPeca: dados.precoPorPeca,
       precoVendaSugerido: dados.precoVendaSugerido,
       observacoes: dados.observacoes || null,
-      ...(arte && {
-        arteUrl: arte.url,
-        arteNome: arte.nome,
-        arteTipo: arte.tipo,
+      ...(arteUrl && {
+        arteUrl,
+        arteNome: (formData.get("arteNome") as string) || null,
+        arteTipo: (formData.get("arteTipo") as string) || null,
       }),
       itens: { create: dados.itens },
     },

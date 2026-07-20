@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
 import { Textarea } from "@/components/ui/textarea"
+import { UploadArquivo } from "@/components/upload-arquivo"
 import { TAMANHOS } from "@/lib/constantes"
 import { formatarBRL, parseBRL } from "@/lib/money"
 import { estadoInicial } from "@/server/action-state"
@@ -283,22 +284,14 @@ export function PedidoDialog({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="ped-arte">Arte da peça (PNG, JPEG ou PDF)</Label>
-            <Input
-              id="ped-arte"
-              name="arte"
-              type="file"
-              accept="image/png,image/jpeg,image/webp,application/pdf"
-              disabled={!uploadDisponivel}
-              className="file:mr-3 file:rounded-md file:border-0 file:bg-neutral-100 file:px-3 file:py-1 file:text-sm"
-            />
-            {!uploadDisponivel && (
-              <p className="text-xs text-destructive">
-                Upload indisponível: falta configurar SUPABASE_SERVICE_ROLE_KEY.
-              </p>
-            )}
-          </div>
+          <UploadArquivo
+            pasta="pedidos"
+            rotulo="Arte da peça (PNG, JPEG ou PDF)"
+            campoUrl="arteUrl"
+            campoNome="arteNome"
+            campoTipo="arteTipo"
+            disponivel={uploadDisponivel}
+          />
 
           <div className="space-y-2">
             <Label htmlFor="ped-obs">Observações</Label>
