@@ -7,13 +7,13 @@ type Tx = Prisma.TransactionClient
  * custo médio ponderado das entradas com custo; na ausência,
  * custo de referência do produto; sem ambos, null ("não calculado").
  */
-export async function custoUnitarioProduto(
+export async function custoUnitarioVariacao(
   tx: Tx,
-  produtoId: string
+  variacaoId: string
 ): Promise<number | null> {
   const entradas = await tx.movimentacaoEstoque.findMany({
     where: {
-      produtoId,
+      variacaoId,
       tipo: { in: ["ENTRADA", "AJUSTE_ENTRADA"] },
       custoUnitario: { not: null },
     },
@@ -29,9 +29,9 @@ export async function custoUnitarioProduto(
     return Math.round(totalCusto / totalQtd)
   }
 
-  const produto = await tx.produto.findUnique({
-    where: { id: produtoId },
-    select: { custoReferencia: true },
+  const variacao = await tx.variacao.findUnique({
+    where: { id: variacaoId },
+    select: { produto: { select: { custoReferencia: true } } },
   })
-  return produto?.custoReferencia ?? null
+  return variacao?.produto.custoReferencia ?? null
 }

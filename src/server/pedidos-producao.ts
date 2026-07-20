@@ -142,35 +142,49 @@ export async function confirmarRecebimento(
           )
         }
 
-        let produto = await tx.produto.findUnique({
-          where: {
-            modeloId_cor_tamanho: {
-              modeloId: item.modeloId,
-              cor: item.cor,
-              tamanho: item.tamanho,
-            },
-          },
+        // Reaproveita o produto do modelo; cria um se ainda não existir.
+        let produto = await tx.produto.findFirst({
+          where: { modeloId: item.modeloId },
+          orderBy: { criadoEm: "asc" },
         })
-
         if (!produto) {
+          const modelo = await tx.modelo.findUnique({
+            where: { id: item.modeloId },
+          })
           produto = await tx.produto.create({
             data: {
+              nome: modelo?.nome ?? "Produto",
+              categoria: "VESTUARIO",
               modeloId: item.modeloId,
-              cor: item.cor,
-              tamanho: item.tamanho,
               precoVenda: pedido.precoVendaSugerido ?? 0,
               custoReferencia: pedido.precoPorPeca,
             },
           })
         }
 
-        await tx.produto.update({
-          where: { id: produto.id },
+        // A cor/tamanho recebida vira uma variação do produto.
+        let variacao = await tx.variacao.findUnique({
+          where: {
+            produtoId_cor_tamanho: {
+              produtoId: produto.id,
+              cor: item.cor,
+              tamanho: item.tamanho,
+            },
+          },
+        })
+        if (!variacao) {
+          variacao = await tx.variacao.create({
+            data: { produtoId: produto.id, cor: item.cor, tamanho: item.tamanho },
+          })
+        }
+
+        await tx.variacao.update({
+          where: { id: variacao.id },
           data: { estoqueAtual: { increment: delta } },
         })
         await tx.movimentacaoEstoque.create({
           data: {
-            produtoId: produto.id,
+            variacaoId: variacao.id,
             tipo: "ENTRADA",
             origem: "PRODUCAO",
             quantidade: delta,

@@ -85,7 +85,7 @@ export async function salvarEvento(
 const linkSchema = z.object({
   eventoId: z.string().min(1),
   prazoReserva: z.string().optional(), // datetime-local: "2026-08-20T18:00"
-  produtoIds: z.array(z.string()).min(1, "Escolha ao menos um produto"),
+  variacaoIds: z.array(z.string()).min(1, "Escolha ao menos um produto"),
 })
 
 /**
@@ -101,12 +101,12 @@ export async function configurarLinkReserva(
   const parsed = linkSchema.safeParse({
     eventoId: formData.get("eventoId"),
     prazoReserva: (formData.get("prazoReserva") as string) || undefined,
-    produtoIds: formData.getAll("produtoIds").map(String),
+    variacaoIds: formData.getAll("variacaoIds").map(String),
   })
   if (!parsed.success) {
     return { ok: false, message: parsed.error.issues[0].message }
   }
-  const { eventoId, prazoReserva, produtoIds } = parsed.data
+  const { eventoId, prazoReserva, variacaoIds } = parsed.data
 
   await db.$transaction(async (tx) => {
     await tx.evento.update({
@@ -118,7 +118,7 @@ export async function configurarLinkReserva(
     })
     await tx.eventoProduto.deleteMany({ where: { eventoId } })
     await tx.eventoProduto.createMany({
-      data: produtoIds.map((produtoId) => ({ eventoId, produtoId })),
+      data: variacaoIds.map((variacaoId) => ({ eventoId, variacaoId })),
     })
   })
 

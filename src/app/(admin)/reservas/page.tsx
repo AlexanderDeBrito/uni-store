@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { requireAuth } from "@/lib/auth"
 import { formatarBRL } from "@/lib/money"
 import { STATUS_RESERVA, labelFormaPagamento } from "@/lib/constantes"
+import { descreverVariacao } from "@/lib/produto"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/layout/page-header"
 import { StatCard } from "@/components/layout/stat-card"
@@ -53,7 +54,7 @@ export default async function ReservasPage({
         }),
       },
       include: {
-        itens: { include: { produto: { include: { modelo: true } } } },
+        itens: { include: { variacao: { include: { produto: true } } } },
         evento: { select: { nome: true } },
         congregacao: { select: { nome: true } },
       },
@@ -166,7 +167,7 @@ export default async function ReservasPage({
                         {r.itens
                           .map(
                             (i) =>
-                              `${i.quantidade}× ${i.produto.modelo.nome} ${i.produto.cor} ${i.produto.tamanho}`
+                              `${i.quantidade}× ${i.variacao.produto.nome} ${descreverVariacao(i.variacao)}`
                           )
                           .join(", ")}
                       </p>
@@ -198,12 +199,12 @@ export default async function ReservasPage({
                             nome={r.nome}
                             itens={r.itens.map((i) => ({
                               id: i.id,
-                              descricao: `${i.produto.modelo.nome} ${i.produto.cor} — ${i.produto.tamanho}`,
+                              descricao: `${i.variacao.produto.nome} ${descreverVariacao(i.variacao)}`,
                               quantidade: i.quantidade,
                               precoUnitario: i.precoUnitario,
                               disponivelExtra:
-                                i.produto.estoqueAtual -
-                                i.produto.estoqueReservado,
+                                i.variacao.estoqueAtual -
+                                i.variacao.estoqueReservado,
                             }))}
                             trigger={
                               <Button size="sm" className="rounded-xl">

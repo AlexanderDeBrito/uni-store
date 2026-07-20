@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Loader2, Plus, Trash2, UserCheck } from "lucide-react"
+import { AlertCircle, Loader2, Plus, Trash2, UserCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { formatarCpf, limparCpf, validarCpf } from "@/lib/cpf"
 import { formatarBRL } from "@/lib/money"
 import { FORMAS_PAGAMENTO } from "@/lib/constantes"
+import { descreverVariacao } from "@/lib/produto"
 import { buscarClientePorCpf } from "@/server/clientes"
 import { criarVenda, editarVenda, type VendaPayload } from "@/server/vendas"
 
@@ -24,13 +25,18 @@ export type CongregacaoOption = {
 }
 export type ProdutoOption = {
   id: string
-  label: string
+  nome: string
   precoVenda: number
-  estoqueAtual: number
+  variacoes: {
+    id: string
+    cor: string
+    tamanho: string
+    disponivel: number
+  }[]
 }
 export type EventoOption = { id: string; nome: string }
 
-type ItemForm = { produtoId: string; quantidade: number }
+type ItemForm = { produtoId: string; variacaoId: string; quantidade: number }
 
 export type VendaInicial = {
   id: string
@@ -42,7 +48,7 @@ export type VendaInicial = {
   eventoId: string
   formaPagamento: string
   observacoes: string
-  itens: ItemForm[]
+  itens: { variacaoId: string; quantidade: number }[]
 }
 
 function Secao({
@@ -99,20 +105,34 @@ export function VendaForm({
     vendaInicial?.formaPagamento ?? ""
   )
   const [observacoes, setObservacoes] = useState(vendaInicial?.observacoes ?? "")
-  const [itens, setItens] = useState<ItemForm[]>(
-    vendaInicial?.itens ?? [{ produtoId: "", quantidade: 1 }]
-  )
+
+  // Reconstrói produto+variação a partir dos itens salvos.
+  const [itens, setItens] = useState<ItemForm[]>(() => {
+    if (!vendaInicial) return [{ produtoId: "", variacaoId: "", quantidade: 1 }]
+    return vendaInicial.itens.map((i) => ({
+      produtoId:
+        produtos.find((p) => p.variacoes.some((v) => v.id === i.variacaoId))
+          ?.id ?? "",
+      variacaoId: i.variacaoId,
+      quantidade: i.quantidade,
+    }))
+  })
 
   const congregacoesDoSetor = useMemo(
     () => congregacoes.filter((c) => c.setorId === setorId),
     [congregacoes, setorId]
   )
 
+  function variacaoDe(item: ItemForm) {
+    const produto = produtos.find((p) => p.id === item.produtoId)
+    return produto?.variacoes.find((v) => v.id === item.variacaoId)
+  }
+
   const total = useMemo(
     () =>
       itens.reduce((acc, item) => {
         const p = produtos.find((x) => x.id === item.produtoId)
-        return acc + (p ? p.precoVenda * item.quantidade : 0)
+        return acc + (p && item.variacaoId ? p.precoVenda * item.quantidade : 0)
       }, 0),
     [itens, produtos]
   )
@@ -120,16 +140,15 @@ export function VendaForm({
   const cpfPreenchido = cpf.replace(/\D/g, "").length > 0
   const cpfValido = !cpfPreenchido || validarCpf(cpf)
 
-  // Estoque insuficiente em algum item bloqueia a confirmação.
   const itemSemEstoque = itens.some((item) => {
-    const p = produtos.find((x) => x.id === item.produtoId)
-    return p ? item.quantidade > p.estoqueAtual : false
+    const v = variacaoDe(item)
+    return v ? item.quantidade > v.disponivel : false
   })
 
   const podeEnviar =
     nome.trim().length > 0 &&
     formaPagamento !== "" &&
-    itens.some((i) => i.produtoId) &&
+    itens.some((i) => i.variacaoId) &&
     cpfValido &&
     !itemSemEstoque
 
@@ -181,8 +200,8 @@ export function VendaForm({
       formaPagamento: formaPagamento as VendaPayload["formaPagamento"],
       observacoes: observacoes.trim() || undefined,
       itens: itens
-        .filter((i) => i.produtoId)
-        .map((i) => ({ produtoId: i.produtoId, quantidade: i.quantidade })),
+        .filter((i) => i.variacaoId)
+        .map((i) => ({ variacaoId: i.variacaoId, quantidade: i.quantidade })),
     }
 
     startTransition(async () => {
@@ -293,15 +312,18 @@ export function VendaForm({
 
       <Secao
         titulo="Produtos"
-        descricao="Só é possível vender o que existe em estoque"
+        descricao="Escolha o produto e depois a variação — o saldo é conferido na hora"
       >
         <div className="space-y-3">
           {itens.map((item, index) => {
             const produto = produtos.find((p) => p.id === item.produtoId)
-            const semEstoque =
-              produto && item.quantidade > produto.estoqueAtual
+            const variacao = variacaoDe(item)
+            const semEstoque = variacao && item.quantidade > variacao.disponivel
+            const esgotado =
+              produto && produto.variacoes.every((v) => v.disponivel <= 0)
+
             return (
-              <div key={index} className="space-y-1">
+              <div key={index} className="space-y-1.5">
                 <div className="flex items-end gap-2">
                   <div className="flex-1 space-y-2">
                     {index === 0 && (
@@ -312,34 +334,65 @@ export function VendaForm({
                     <NativeSelect
                       value={item.produtoId}
                       onChange={(e) =>
-                        atualizarItem(index, { produtoId: e.target.value })
+                        atualizarItem(index, {
+                          produtoId: e.target.value,
+                          variacaoId: "",
+                        })
                       }
                       aria-label={`Produto ${index + 1}`}
                     >
                       <option value="" disabled>
                         Selecione o produto
                       </option>
-                      {produtos.map((p) => (
+                      {produtos.map((p) => {
+                        const total = p.variacoes.reduce(
+                          (a, v) => a + v.disponivel,
+                          0
+                        )
+                        return (
+                          <option key={p.id} value={p.id} disabled={total <= 0}>
+                            {p.nome} · {formatarBRL(p.precoVenda)}
+                            {total <= 0 ? " (esgotado)" : ""}
+                          </option>
+                        )
+                      })}
+                    </NativeSelect>
+                  </div>
+
+                  <div className="w-40 space-y-2">
+                    {index === 0 && <Label>Variação</Label>}
+                    <NativeSelect
+                      value={item.variacaoId}
+                      onChange={(e) =>
+                        atualizarItem(index, { variacaoId: e.target.value })
+                      }
+                      disabled={!item.produtoId}
+                      aria-label={`Variação do produto ${index + 1}`}
+                    >
+                      <option value="" disabled>
+                        {item.produtoId ? "Selecione" : "Escolha o produto"}
+                      </option>
+                      {produto?.variacoes.map((v) => (
                         <option
-                          key={p.id}
-                          value={p.id}
-                          disabled={p.estoqueAtual === 0}
+                          key={v.id}
+                          value={v.id}
+                          disabled={v.disponivel <= 0}
                         >
-                          {p.label} · {formatarBRL(p.precoVenda)}
-                          {p.estoqueAtual === 0
-                            ? " (sem estoque)"
-                            : ` (saldo: ${p.estoqueAtual})`}
+                          {descreverVariacao(v)}
+                          {v.disponivel <= 0
+                            ? " (indisponível)"
+                            : ` (${v.disponivel})`}
                         </option>
                       ))}
                     </NativeSelect>
                   </div>
+
                   <div className="w-20 space-y-2">
                     {index === 0 && <Label>Qtd.</Label>}
                     <Input
                       type="number"
                       min={1}
-                      max={produto?.estoqueAtual}
-                      step={1}
+                      max={variacao?.disponivel}
                       value={item.quantidade}
                       onChange={(e) =>
                         atualizarItem(index, {
@@ -352,11 +405,13 @@ export function VendaForm({
                       aria-label={`Quantidade do produto ${index + 1}`}
                     />
                   </div>
+
                   <div className="hidden w-24 pb-2 text-right text-sm font-medium sm:block">
-                    {produto
+                    {produto && item.variacaoId
                       ? formatarBRL(produto.precoVenda * item.quantidade)
                       : "—"}
                   </div>
+
                   <Button
                     type="button"
                     variant="ghost"
@@ -371,20 +426,33 @@ export function VendaForm({
                     <Trash2 className="size-4" />
                   </Button>
                 </div>
-                {semEstoque && (
-                  <p className="text-sm text-destructive">
-                    Estoque insuficiente. Disponível: {produto.estoqueAtual}
+
+                {esgotado && (
+                  <p className="flex items-center gap-1.5 text-sm text-destructive">
+                    <AlertCircle className="size-3.5" />
+                    Este produto está indisponível em estoque.
+                  </p>
+                )}
+                {semEstoque && variacao && (
+                  <p className="flex items-center gap-1.5 text-sm text-destructive">
+                    <AlertCircle className="size-3.5" />
+                    Indisponível em estoque — só há {variacao.disponivel}{" "}
+                    disponível(is). Adicione mais em Estoque.
                   </p>
                 )}
               </div>
             )
           })}
+
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={() =>
-              setItens((prev) => [...prev, { produtoId: "", quantidade: 1 }])
+              setItens((prev) => [
+                ...prev,
+                { produtoId: "", variacaoId: "", quantidade: 1 },
+              ])
             }
           >
             <Plus className="size-4" /> Adicionar produto

@@ -48,7 +48,7 @@ export default async function VendasPage({
       cliente: true,
       congregacao: { include: { setor: true } },
       evento: { select: { nome: true } },
-      itens: { include: { produto: { include: { modelo: true } } } },
+      itens: { include: { variacao: { include: { produto: true } } } },
     },
     orderBy: { data: "desc" },
     take: 200,
@@ -70,7 +70,7 @@ export default async function VendasPage({
     lucroTotal: v.lucroTotal,
     observacoes: v.observacoes,
     itens: v.itens.map((i) => ({
-      descricao: `${i.produto.modelo.nome} ${i.produto.cor} — ${i.produto.tamanho}`,
+      descricao: `${i.variacao.produto.nome} ${i.variacao.cor} — ${i.variacao.tamanho}`,
       quantidade: i.quantidade,
       precoUnitario: i.precoUnitario,
       subtotal: i.precoUnitario * i.quantidade,

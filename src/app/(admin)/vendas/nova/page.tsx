@@ -12,8 +12,9 @@ export default async function NovaVendaPage() {
     db.setor.findMany({ where: { ativo: true }, orderBy: { nome: "asc" } }),
     db.congregacao.findMany({ where: { ativo: true }, orderBy: { nome: "asc" } }),
     db.produto.findMany({
-      include: { modelo: true },
-      orderBy: [{ modelo: { nome: "asc" } }, { cor: "asc" }, { tamanho: "asc" }],
+      where: { ativo: true },
+      include: { variacoes: { orderBy: [{ cor: "asc" }, { tamanho: "asc" }] } },
+      orderBy: { nome: "asc" },
     }),
     db.evento.findMany({
       where: { status: { in: ["PLANEJADO", "ATIVO"] } },
@@ -39,9 +40,14 @@ export default async function NovaVendaPage() {
         }))}
         produtos={produtos.map((p) => ({
           id: p.id,
-          label: `${p.modelo.nome} ${p.cor} — ${p.tamanho}`,
+          nome: p.nome,
           precoVenda: p.precoVenda,
-          estoqueAtual: p.estoqueAtual,
+          variacoes: p.variacoes.map((v) => ({
+            id: v.id,
+            cor: v.cor,
+            tamanho: v.tamanho,
+            disponivel: v.estoqueAtual - v.estoqueReservado,
+          })),
         }))}
         eventos={eventos}
       />

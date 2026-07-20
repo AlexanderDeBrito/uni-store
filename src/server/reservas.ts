@@ -6,13 +6,22 @@ import type { Prisma } from "@prisma/client"
 import { db } from "@/lib/db"
 import { requireAuth } from "@/lib/auth"
 import { limparCpf } from "@/lib/cpf"
-import { custoUnitarioProduto } from "./custo"
+import { custoUnitarioVariacao } from "./custo"
 import type { ActionState } from "./action-state"
 
 type Tx = Prisma.TransactionClient
 
+/** Rótulo do item para mensagens de erro: "Camiseta Bordô — M". */
+function descreverItem(
+  variacao: { cor: string; tamanho: string; produto: { nome: string } } | null
+): string {
+  if (!variacao) return "produto"
+  const detalhe = [variacao.cor, variacao.tamanho].filter(Boolean).join(" — ")
+  return detalhe ? `${variacao.produto.nome} ${detalhe}` : variacao.produto.nome
+}
+
 const itemSchema = z.object({
-  produtoId: z.string().min(1),
+  variacaoId: z.string().min(1),
   quantidade: z.number().int().positive(),
 })
 
@@ -35,38 +44,38 @@ export type ReservaResult = ActionState & { codigo?: string }
  * que é `estoqueAtual - estoqueReservado`. O UPDATE condicional garante que duas
  * reservas simultâneas não passem do saldo.
  */
-async function segurarEstoque(tx: Tx, produtoId: string, quantidade: number) {
+async function segurarEstoque(tx: Tx, variacaoId: string, quantidade: number) {
   const afetados = await tx.$executeRaw`
-    UPDATE "Produto"
+    UPDATE "Variacao"
     SET "estoqueReservado" = "estoqueReservado" + ${quantidade}
-    WHERE "id" = ${produtoId}
+    WHERE "id" = ${variacaoId}
       AND "estoqueAtual" - "estoqueReservado" >= ${quantidade}
   `
   if (afetados === 0) {
-    const p = await tx.produto.findUnique({
-      where: { id: produtoId },
-      include: { modelo: true },
+    const v = await tx.variacao.findUnique({
+      where: { id: variacaoId },
+      include: { produto: true },
     })
-    const disponivel = p ? p.estoqueAtual - p.estoqueReservado : 0
+    const disponivel = v ? v.estoqueAtual - v.estoqueReservado : 0
     throw new Error(
-      `Estoque insuficiente de ${p?.modelo.nome} ${p?.cor} — ${p?.tamanho}. Disponível: ${disponivel}`
+      `Estoque insuficiente de ${descreverItem(v)}. Disponível: ${disponivel}`
     )
   }
 }
 
 /** Devolve as peças presas ao disponível (cancelamento, inadimplência, retirada). */
-async function liberarEstoque(tx: Tx, produtoId: string, quantidade: number) {
+async function liberarEstoque(tx: Tx, variacaoId: string, quantidade: number) {
   await tx.$executeRaw`
-    UPDATE "Produto"
+    UPDATE "Variacao"
     SET "estoqueReservado" = GREATEST("estoqueReservado" - ${quantidade}, 0)
-    WHERE "id" = ${produtoId}
+    WHERE "id" = ${variacaoId}
   `
 }
 
 async function liberarItensDaReserva(tx: Tx, reservaId: string) {
   const itens = await tx.reservaItem.findMany({ where: { reservaId } })
   for (const item of itens) {
-    await liberarEstoque(tx, item.produtoId, item.quantidade)
+    await liberarEstoque(tx, item.variacaoId, item.quantidade)
   }
 }
 
@@ -105,18 +114,19 @@ export async function criarReserva(payload: ReservaPayload): Promise<ReservaResu
       })
 
       for (const item of dados.itens) {
-        const produto = await tx.produto.findUnique({
-          where: { id: item.produtoId },
+        const variacao = await tx.variacao.findUnique({
+          where: { id: item.variacaoId },
+          include: { produto: true },
         })
-        if (!produto) throw new Error("Produto não encontrado.")
+        if (!variacao) throw new Error("Produto não encontrado.")
 
-        await segurarEstoque(tx, item.produtoId, item.quantidade)
+        await segurarEstoque(tx, item.variacaoId, item.quantidade)
         await tx.reservaItem.create({
           data: {
             reservaId: reserva.id,
-            produtoId: item.produtoId,
+            variacaoId: item.variacaoId,
             quantidade: item.quantidade,
-            precoUnitario: produto.precoVenda,
+            precoUnitario: variacao.produto.precoVenda,
           },
         })
       }
@@ -158,8 +168,8 @@ export async function editarReserva(
         if (!item) continue
 
         const delta = alteracao.quantidade - item.quantidade
-        if (delta > 0) await segurarEstoque(tx, item.produtoId, delta)
-        if (delta < 0) await liberarEstoque(tx, item.produtoId, -delta)
+        if (delta > 0) await segurarEstoque(tx, item.variacaoId, delta)
+        if (delta < 0) await liberarEstoque(tx, item.variacaoId, -delta)
 
         if (alteracao.quantidade === 0) {
           await tx.reservaItem.delete({ where: { id: item.id } })
@@ -216,7 +226,7 @@ export async function confirmarRetirada(
     await db.$transaction(async (tx) => {
       const reserva = await tx.reserva.findUnique({
         where: { id: reservaId },
-        include: { itens: { include: { produto: { include: { modelo: true } } } } },
+        include: { itens: { include: { variacao: { include: { produto: true } } } } },
       })
       if (!reserva) throw new Error("Reserva não encontrada.")
       if (reserva.status !== "RESERVADA") {
@@ -255,8 +265,8 @@ export async function confirmarRetirada(
       let lucroTotal: number | null = 0
       for (const item of reserva.itens) {
         // Sai do estoque físico e deixa de ocupar a reserva.
-        const baixa = await tx.produto.updateMany({
-          where: { id: item.produtoId, estoqueAtual: { gte: item.quantidade } },
+        const baixa = await tx.variacao.updateMany({
+          where: { id: item.variacaoId, estoqueAtual: { gte: item.quantidade } },
           data: {
             estoqueAtual: { decrement: item.quantidade },
             estoqueReservado: { decrement: item.quantidade },
@@ -264,15 +274,15 @@ export async function confirmarRetirada(
         })
         if (baixa.count === 0) {
           throw new Error(
-            `Estoque insuficiente de ${item.produto.modelo.nome} ${item.produto.cor} — ${item.produto.tamanho}.`
+            `Estoque insuficiente de ${descreverItem(item.variacao)}.`
           )
         }
 
-        const custo = await custoUnitarioProduto(tx, item.produtoId)
+        const custo = await custoUnitarioVariacao(tx, item.variacaoId)
         await tx.vendaItem.create({
           data: {
             vendaId: venda.id,
-            produtoId: item.produtoId,
+            variacaoId: item.variacaoId,
             quantidade: item.quantidade,
             precoUnitario: item.precoUnitario,
             custoUnitario: custo,
@@ -280,7 +290,7 @@ export async function confirmarRetirada(
         })
         await tx.movimentacaoEstoque.create({
           data: {
-            produtoId: item.produtoId,
+            variacaoId: item.variacaoId,
             tipo: "SAIDA",
             origem: "VENDA_RESERVA",
             quantidade: item.quantidade,

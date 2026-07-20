@@ -3,6 +3,7 @@ import { ArrowLeft } from "lucide-react"
 import { db } from "@/lib/db"
 import { requireAuth } from "@/lib/auth"
 import { formatarBRL } from "@/lib/money"
+import { descreverVariacao } from "@/lib/produto"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -33,6 +34,7 @@ const LABEL_ORIGEM: Record<string, string> = {
   EDICAO_VENDA: "Edição de venda",
   EXCLUSAO_VENDA: "Exclusão de venda",
   AJUSTE_MANUAL: "Ajuste manual",
+  VENDA_RESERVA: "Retirada de reserva",
   RETIRADA_RESERVA: "Retirada de reserva",
   CANCELAMENTO_RESERVA: "Cancelamento de reserva",
 }
@@ -46,14 +48,14 @@ export default async function MovimentacoesPage({
   const { produto: produtoId } = await searchParams
 
   const [produtos, movimentacoes] = await Promise.all([
-    db.produto.findMany({
-      orderBy: [{ modelo: { nome: "asc" } }, { cor: "asc" }, { tamanho: "asc" }],
-      select: { id: true, modelo: true, cor: true, tamanho: true },
+    db.variacao.findMany({
+      orderBy: [{ produto: { nome: "asc" } }, { cor: "asc" }, { tamanho: "asc" }],
+      include: { produto: true },
     }),
     db.movimentacaoEstoque.findMany({
-      where: produtoId ? { produtoId } : undefined,
+      where: produtoId ? { variacaoId: produtoId } : undefined,
       include: {
-        produto: { select: { modelo: true, cor: true, tamanho: true } },
+        variacao: { include: { produto: true } },
         usuario: { select: { nome: true } },
       },
       orderBy: { criadoEm: "desc" },
@@ -80,7 +82,7 @@ export default async function MovimentacoesPage({
       <FiltroProduto
         produtos={produtos.map((p) => ({
           id: p.id,
-          label: `${p.modelo.nome} ${p.cor} — ${p.tamanho}`,
+          label: `${p.produto.nome} ${descreverVariacao(p)}`,
         }))}
         produtoSelecionado={produtoId ?? ""}
       />
@@ -122,7 +124,7 @@ export default async function MovimentacoesPage({
                       {m.data.toLocaleDateString("pt-BR")}
                     </TableCell>
                     <TableCell className="font-medium">
-                      {m.produto.modelo.nome} {m.produto.cor} — {m.produto.tamanho}
+                      {m.variacao.produto.nome} {descreverVariacao(m.variacao)}
                     </TableCell>
                     <TableCell>
                       <Badge variant={tipo.entrada ? "secondary" : "outline"}>

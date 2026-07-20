@@ -9,7 +9,7 @@ import { parseDataLocal } from "@/lib/data"
 import type { ActionState } from "./action-state"
 
 const entradaSchema = z.object({
-  produtoId: z.string().min(1, "Selecione o produto"),
+  variacaoId: z.string().min(1, "Selecione o produto"),
   quantidade: z
     .number({ message: "Informe a quantidade" })
     .int("Quantidade deve ser um número inteiro")
@@ -31,7 +31,7 @@ export async function registrarEntrada(
 
   const custo = parseBRL((formData.get("custoUnitario") as string) ?? "")
   const parsed = entradaSchema.safeParse({
-    produtoId: formData.get("produtoId"),
+    variacaoId: formData.get("variacaoId"),
     quantidade: Number(formData.get("quantidade")),
     custoUnitario: custo ?? undefined,
     data: parseDataLocal((formData.get("data") as string) ?? "") ?? new Date(),
@@ -41,13 +41,13 @@ export async function registrarEntrada(
     return { ok: false, message: parsed.error.issues[0].message }
   }
 
-  const { produtoId, quantidade, custoUnitario, data, observacao } =
+  const { variacaoId, quantidade, custoUnitario, data, observacao } =
     parsed.data
 
   await db.$transaction(async (tx) => {
     await tx.movimentacaoEstoque.create({
       data: {
-        produtoId,
+        variacaoId,
         tipo: "ENTRADA",
         origem: "PRODUCAO",
         quantidade,
@@ -57,8 +57,8 @@ export async function registrarEntrada(
         usuarioId: session.user.id,
       },
     })
-    await tx.produto.update({
-      where: { id: produtoId },
+    await tx.variacao.update({
+      where: { id: variacaoId },
       data: { estoqueAtual: { increment: quantidade } },
     })
   })
@@ -69,7 +69,7 @@ export async function registrarEntrada(
 }
 
 const ajusteSchema = z.object({
-  produtoId: z.string().min(1, "Selecione o produto"),
+  variacaoId: z.string().min(1, "Selecione o produto"),
   tipo: z.enum(["AJUSTE_ENTRADA", "AJUSTE_SAIDA"]),
   quantidade: z
     .number({ message: "Informe a quantidade" })
@@ -89,7 +89,7 @@ export async function registrarAjuste(
   const session = await requireAuth()
 
   const parsed = ajusteSchema.safeParse({
-    produtoId: formData.get("produtoId"),
+    variacaoId: formData.get("variacaoId"),
     tipo: formData.get("tipo"),
     quantidade: Number(formData.get("quantidade")),
     observacao: formData.get("observacao"),
@@ -98,30 +98,30 @@ export async function registrarAjuste(
     return { ok: false, message: parsed.error.issues[0].message }
   }
 
-  const { produtoId, tipo, quantidade, observacao } = parsed.data
+  const { variacaoId, tipo, quantidade, observacao } = parsed.data
 
   try {
     await db.$transaction(async (tx) => {
       if (tipo === "AJUSTE_SAIDA") {
-        const res = await tx.produto.updateMany({
-          where: { id: produtoId, estoqueAtual: { gte: quantidade } },
+        const res = await tx.variacao.updateMany({
+          where: { id: variacaoId, estoqueAtual: { gte: quantidade } },
           data: { estoqueAtual: { decrement: quantidade } },
         })
         if (res.count === 0) {
-          const p = await tx.produto.findUnique({ where: { id: produtoId } })
+          const p = await tx.variacao.findUnique({ where: { id: variacaoId } })
           throw new Error(
             `Estoque insuficiente. Disponível: ${p?.estoqueAtual ?? 0}`
           )
         }
       } else {
-        await tx.produto.update({
-          where: { id: produtoId },
+        await tx.variacao.update({
+          where: { id: variacaoId },
           data: { estoqueAtual: { increment: quantidade } },
         })
       }
       await tx.movimentacaoEstoque.create({
         data: {
-          produtoId,
+          variacaoId,
           tipo,
           origem: "AJUSTE_MANUAL",
           quantidade,

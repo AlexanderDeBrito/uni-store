@@ -22,8 +22,8 @@ export default async function EditarVendaPage({
     db.setor.findMany({ orderBy: { nome: "asc" } }),
     db.congregacao.findMany({ orderBy: { nome: "asc" } }),
     db.produto.findMany({
-      include: { modelo: true },
-      orderBy: [{ modelo: { nome: "asc" } }, { cor: "asc" }, { tamanho: "asc" }],
+      include: { variacoes: { orderBy: [{ cor: "asc" }, { tamanho: "asc" }] } },
+      orderBy: { nome: "asc" },
     }),
     db.evento.findMany({
       orderBy: { dataInicio: "desc" },
@@ -50,13 +50,19 @@ export default async function EditarVendaPage({
         }))}
         produtos={produtos.map((p) => ({
           id: p.id,
-          label: `${p.modelo.nome} ${p.cor} — ${p.tamanho}`,
+          nome: p.nome,
           precoVenda: p.precoVenda,
-          // O estoque já foi baixado por esta venda: soma de volta o que ela consumiu
-          // para que a edição não acuse falta indevida.
-          estoqueAtual:
-            p.estoqueAtual +
-            (venda.itens.find((i) => i.produtoId === p.id)?.quantidade ?? 0),
+          variacoes: p.variacoes.map((v) => ({
+            id: v.id,
+            cor: v.cor,
+            tamanho: v.tamanho,
+            // Esta venda já baixou o estoque: soma de volta o que ela consumiu
+            // para a edição não acusar falta indevida.
+            disponivel:
+              v.estoqueAtual -
+              v.estoqueReservado +
+              (venda.itens.find((i) => i.variacaoId === v.id)?.quantidade ?? 0),
+          })),
         }))}
         eventos={eventos}
         vendaInicial={{
@@ -70,7 +76,7 @@ export default async function EditarVendaPage({
           formaPagamento: venda.formaPagamento,
           observacoes: venda.observacoes ?? "",
           itens: venda.itens.map((i) => ({
-            produtoId: i.produtoId,
+            variacaoId: i.variacaoId,
             quantidade: i.quantidade,
           })),
         }}

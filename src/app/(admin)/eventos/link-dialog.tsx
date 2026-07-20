@@ -110,7 +110,7 @@ export function LinkDialog({
                   >
                     <input
                       type="checkbox"
-                      name="produtoIds"
+                      name="variacaoIds"
                       value={p.id}
                       checked={marcado}
                       onChange={() => alternar(p.id)}

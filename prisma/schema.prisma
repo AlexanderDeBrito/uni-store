@@ -75,27 +75,62 @@ model Modelo {
   pedidoItens PedidoProducaoItem[]
 }
 
+enum CategoriaProduto {
+  VESTUARIO // camisas, casacos, calças
+  ACESSORIO // pulseiras, bonés, bottons, chaveiros
+  INSTITUCIONAL // livros, devocionais, bíblias
+  ALIMENTO // água, refrigerante, café, chocolate quente
+}
+
+enum UnidadeMedida {
+  UNIDADE
+  LITRO // convertido em porções pelo tamanho do copo
+}
+
+/// Item da vitrine. As cores/tamanhos e o estoque ficam nas variações.
 model Produto {
-  id              String   @id @default(cuid())
-  modeloId        String
-  modelo          Modelo   @relation(fields: [modeloId], references: [id])
-  cor             String
-  tamanho         String
+  id              String           @id @default(cuid())
+  nome            String
+  categoria       CategoriaProduto
+  modeloId        String? // obrigatório em vestuário e acessório
+  modelo          Modelo?          @relation(fields: [modeloId], references: [id])
+  descricao       String?
   precoVenda      Int // centavos
   custoReferencia Int? // centavos
-  descricao       String?
-  estoqueAtual    Int      @default(0) // cache; fonte de verdade é MovimentacaoEstoque
-  // Peças presas por reservas em aberto. Disponível = estoqueAtual - estoqueReservado.
-  estoqueReservado Int     @default(0)
-  criadoEm        DateTime @default(now())
-  atualizadoEm    DateTime @updatedAt
+  imagemUrl       String?
+  imagemNome      String?
+  imagemTipo      String?
+  // Alimentos vendidos por volume: o estoque é gravado em porções.
+  unidadeMedida   UnidadeMedida    @default(UNIDADE)
+  mlPorPorcao     Int?
+  ativo           Boolean          @default(true)
+  criadoEm        DateTime         @default(now())
+  atualizadoEm    DateTime         @updatedAt
 
-  movimentacoes MovimentacaoEstoque[]
-  vendaItens    VendaItem[]
-  reservaItens  ReservaItem[]
+  variacoes Variacao[]
+
+  @@index([categoria])
+}
+
+/// Combinação vendável do produto (cor/tamanho). Guarda o estoque.
+model Variacao {
+  id        String  @id @default(cuid())
+  produtoId String
+  produto   Produto @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+  // Vazio quando a categoria não usa: alimentos e institucional.
+  cor       String  @default("")
+  tamanho   String  @default("")
+
+  estoqueAtual Int @default(0) // cache; fonte de verdade é MovimentacaoEstoque
+  // Presas por reservas em aberto. Disponível = estoqueAtual - estoqueReservado.
+  estoqueReservado Int @default(0)
+
+  movimentacoes  MovimentacaoEstoque[]
+  vendaItens     VendaItem[]
+  reservaItens   ReservaItem[]
   eventoProdutos EventoProduto[]
 
-  @@unique([modeloId, cor, tamanho])
+  @@unique([produtoId, cor, tamanho])
 }
 
 enum TipoMovimentacao {
@@ -118,8 +153,8 @@ enum OrigemMovimentacao {
 
 model MovimentacaoEstoque {
   id            String             @id @default(cuid())
-  produtoId     String
-  produto       Produto            @relation(fields: [produtoId], references: [id])
+  variacaoId    String
+  variacao      Variacao           @relation(fields: [variacaoId], references: [id])
   tipo          TipoMovimentacao
   origem        OrigemMovimentacao
   quantidade    Int // sempre positiva; o tipo define o sinal
@@ -134,7 +169,7 @@ model MovimentacaoEstoque {
   usuario       Usuario?           @relation(fields: [usuarioId], references: [id])
   criadoEm      DateTime           @default(now())
 
-  @@index([produtoId, data])
+  @@index([variacaoId, data])
 }
 
 enum FormaPagamento {
@@ -201,13 +236,13 @@ model VendaItem {
   id            String  @id @default(cuid())
   vendaId       String
   venda         Venda   @relation(fields: [vendaId], references: [id], onDelete: Cascade)
-  produtoId     String
-  produto       Produto @relation(fields: [produtoId], references: [id])
+  variacaoId    String
+  variacao      Variacao @relation(fields: [variacaoId], references: [id])
   quantidade    Int
   precoUnitario Int // centavos; snapshot do preço na venda
   custoUnitario Int? // centavos; snapshot do custo médio na venda
 
-  @@index([produtoId])
+  @@index([variacaoId])
 }
 
 enum StatusReserva {
@@ -245,8 +280,8 @@ model ReservaItem {
   id            String  @id @default(cuid())
   reservaId     String
   reserva       Reserva @relation(fields: [reservaId], references: [id], onDelete: Cascade)
-  produtoId     String
-  produto       Produto @relation(fields: [produtoId], references: [id])
+  variacaoId    String
+  variacao      Variacao @relation(fields: [variacaoId], references: [id])
   quantidade    Int
   precoUnitario Int // centavos; snapshot no momento da reserva
 
@@ -258,10 +293,10 @@ model EventoProduto {
   id        String  @id @default(cuid())
   eventoId  String
   evento    Evento  @relation(fields: [eventoId], references: [id], onDelete: Cascade)
-  produtoId String
-  produto   Produto @relation(fields: [produtoId], references: [id], onDelete: Cascade)
+  variacaoId String
+  variacao   Variacao @relation(fields: [variacaoId], references: [id], onDelete: Cascade)
 
-  @@unique([eventoId, produtoId])
+  @@unique([eventoId, variacaoId])
 }
 
 /// Permite dividir o pagamento (parte dinheiro, parte cartão, parte Pix).

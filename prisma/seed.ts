@@ -48,35 +48,61 @@ async function main() {
     data: { nome: "Moletom", descricao: "Modelo de demonstração" },
   })
 
-  const produtos = await Promise.all(
-    [
-      { modeloId: camiseta.id, cor: "Bordô", tamanho: "P", precoVenda: 4500, custoReferencia: 2200 },
-      { modeloId: camiseta.id, cor: "Bordô", tamanho: "M", precoVenda: 4500, custoReferencia: 2200 },
-      { modeloId: camiseta.id, cor: "Preta", tamanho: "G", precoVenda: 4500, custoReferencia: 2200 },
-      { modeloId: moletom.id, cor: "Verde", tamanho: "M", precoVenda: 12000, custoReferencia: 7000 },
-      { modeloId: moletom.id, cor: "Verde", tamanho: "G", precoVenda: 12000, custoReferencia: 7000 },
-    ].map((p) => db.produto.create({ data: p }))
-  )
+  // Produtos da vitrine com suas variações e estoque inicial
+  const catalogo = [
+    {
+      nome: "Camiseta",
+      modeloId: camiseta.id,
+      precoVenda: 4500,
+      custoReferencia: 2200,
+      variacoes: [
+        { cor: "Bordô", tamanho: "P", quantidade: 20 },
+        { cor: "Bordô", tamanho: "M", quantidade: 20 },
+        { cor: "Preta", tamanho: "G", quantidade: 20 },
+      ],
+    },
+    {
+      nome: "Moletom",
+      modeloId: moletom.id,
+      precoVenda: 12000,
+      custoReferencia: 7000,
+      variacoes: [
+        { cor: "Verde", tamanho: "M", quantidade: 10 },
+        { cor: "Verde", tamanho: "G", quantidade: 10 },
+      ],
+    },
+  ]
 
-  // Entrada inicial de estoque com custo de lote para cada produto demo
-  for (const p of produtos) {
-    const quantidade = p.modeloId === moletom.id ? 10 : 20
-    await db.$transaction([
-      db.movimentacaoEstoque.create({
+  for (const item of catalogo) {
+    const produto = await db.produto.create({
+      data: {
+        nome: item.nome,
+        categoria: "VESTUARIO",
+        modeloId: item.modeloId,
+        precoVenda: item.precoVenda,
+        custoReferencia: item.custoReferencia,
+      },
+    })
+    for (const v of item.variacoes) {
+      const variacao = await db.variacao.create({
         data: {
-          produtoId: p.id,
+          produtoId: produto.id,
+          cor: v.cor,
+          tamanho: v.tamanho,
+          estoqueAtual: v.quantidade,
+        },
+      })
+      await db.movimentacaoEstoque.create({
+        data: {
+          variacaoId: variacao.id,
           tipo: "ENTRADA",
           origem: "PRODUCAO",
-          quantidade,
-          custoUnitario: p.custoReferencia,
+          quantidade: v.quantidade,
+          custoUnitario: item.custoReferencia,
           observacao: "Lote inicial (demonstração)",
         },
-      }),
-      db.produto.update({
-        where: { id: p.id },
-        data: { estoqueAtual: quantidade },
-      }),
-    ])
+      })
+    }
   }
 
   console.log("Dados de demonstração criados.")

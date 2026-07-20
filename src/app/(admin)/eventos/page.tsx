@@ -4,6 +4,7 @@ import { db } from "@/lib/db"
 import { requireAuth } from "@/lib/auth"
 import { formatarBRL } from "@/lib/money"
 import { STATUS_EVENTO } from "@/lib/constantes"
+import { descreverVariacao } from "@/lib/produto"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/layout/page-header"
 import { EventoDialog } from "./evento-dialog"
@@ -32,7 +33,7 @@ export default async function EventosPage() {
       include: {
         _count: { select: { vendas: true, reservas: true } },
         vendas: { select: { total: true } },
-        produtos: { select: { produtoId: true } },
+        produtos: { select: { variacaoId: true } },
         reservas: {
           where: { status: "RESERVADA" },
           select: { itens: { select: { quantidade: true } } },
@@ -40,17 +41,17 @@ export default async function EventosPage() {
       },
       orderBy: { dataInicio: "desc" },
     }),
-    db.produto.findMany({
-      include: { modelo: true },
-      orderBy: [{ modelo: { nome: "asc" } }, { cor: "asc" }, { tamanho: "asc" }],
+    db.variacao.findMany({
+      include: { produto: true },
+      orderBy: [{ produto: { nome: "asc" } }, { cor: "asc" }, { tamanho: "asc" }],
     }),
   ])
 
-  const opcoesProduto = produtos.map((p) => ({
-    id: p.id,
-    label: `${p.modelo.nome} ${p.cor} — ${p.tamanho}`,
-    precoVenda: p.precoVenda,
-    disponivel: p.estoqueAtual - p.estoqueReservado,
+  const opcoesProduto = produtos.map((v) => ({
+    id: v.id,
+    label: `${v.produto.nome} ${descreverVariacao(v)}`,
+    precoVenda: v.produto.precoVenda,
+    disponivel: v.estoqueAtual - v.estoqueReservado,
   }))
 
   return (
@@ -171,7 +172,7 @@ export default async function EventosPage() {
                     eventoId={e.id}
                     eventoNome={e.nome}
                     produtos={opcoesProduto}
-                    selecionadosIniciais={e.produtos.map((p) => p.produtoId)}
+                    selecionadosIniciais={e.produtos.map((p) => p.variacaoId)}
                     prazoInicial={paraInputDataHora(e.prazoReserva)}
                     trigger={
                       <Button size="sm" className="rounded-xl">

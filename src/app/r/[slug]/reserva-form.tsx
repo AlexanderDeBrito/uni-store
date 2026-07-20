@@ -97,7 +97,7 @@ export function ReservaForm({
         observacoes: observacoes.trim() || undefined,
         itens: itens
           .filter((i) => i.produtoId)
-          .map((i) => ({ produtoId: i.produtoId, quantidade: i.quantidade })),
+          .map((i) => ({ variacaoId: i.produtoId, quantidade: i.quantidade })),
       })
       if (res.ok && res.codigo) setCodigo(res.codigo)
       else toast.error(res.message)

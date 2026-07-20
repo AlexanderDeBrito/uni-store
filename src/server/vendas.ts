@@ -6,9 +6,19 @@ import type { Prisma } from "@prisma/client"
 import { db } from "@/lib/db"
 import { requireAuth } from "@/lib/auth"
 import { limparCpf, validarCpf } from "@/lib/cpf"
-import { custoUnitarioProduto } from "./custo"
+import { custoUnitarioVariacao } from "./custo"
 
 type Tx = Prisma.TransactionClient
+
+/** Rótulo do item para mensagens de erro: "Camiseta Bordô — M". */
+function descreverItem(variacao: {
+  cor: string
+  tamanho: string
+  produto: { nome: string }
+}): string {
+  const detalhe = [variacao.cor, variacao.tamanho].filter(Boolean).join(" — ")
+  return detalhe ? `${variacao.produto.nome} ${detalhe}` : variacao.produto.nome
+}
 
 // Só nome do cliente, produto e forma de pagamento são obrigatórios.
 const vendaSchema = z.object({
@@ -28,7 +38,7 @@ const vendaSchema = z.object({
   itens: z
     .array(
       z.object({
-        produtoId: z.string().min(1),
+        variacaoId: z.string().min(1),
         quantidade: z.number().int().positive(),
       })
     )
@@ -58,46 +68,47 @@ async function aplicarItens(
   let lucroTotal: number | null = 0
 
   for (const item of itens) {
-    const produto = await tx.produto.findUnique({
-      where: { id: item.produtoId },
-      include: { modelo: true },
+    const variacao = await tx.variacao.findUnique({
+      where: { id: item.variacaoId },
+      include: { produto: true },
     })
-    if (!produto) throw new Error("Produto não encontrado.")
+    if (!variacao) throw new Error("Produto não encontrado.")
+    const rotulo = descreverItem(variacao)
 
     // Venda direta só pode consumir o que não está preso em reservas.
     const baixa = await tx.$executeRaw`
-      UPDATE "Produto"
+      UPDATE "Variacao"
       SET "estoqueAtual" = "estoqueAtual" - ${item.quantidade}
-      WHERE "id" = ${item.produtoId}
+      WHERE "id" = ${item.variacaoId}
         AND "estoqueAtual" - "estoqueReservado" >= ${item.quantidade}
     `
     if (baixa === 0) {
-      const atual = await tx.produto.findUnique({
-        where: { id: item.produtoId },
+      const atual = await tx.variacao.findUnique({
+        where: { id: item.variacaoId },
         select: { estoqueAtual: true, estoqueReservado: true },
       })
       const disponivel = atual
         ? atual.estoqueAtual - atual.estoqueReservado
         : 0
       throw new Error(
-        `Estoque insuficiente de ${produto.modelo.nome} ${produto.cor} — ${produto.tamanho}. Disponível: ${disponivel}`
+        `Estoque insuficiente de ${rotulo}. Disponível: ${disponivel}`
       )
     }
 
-    const custo = await custoUnitarioProduto(tx, item.produtoId)
+    const custo = await custoUnitarioVariacao(tx, item.variacaoId)
 
     await tx.vendaItem.create({
       data: {
         vendaId,
-        produtoId: item.produtoId,
+        variacaoId: item.variacaoId,
         quantidade: item.quantidade,
-        precoUnitario: produto.precoVenda,
+        precoUnitario: variacao.produto.precoVenda,
         custoUnitario: custo,
       },
     })
     await tx.movimentacaoEstoque.create({
       data: {
-        produtoId: item.produtoId,
+        variacaoId: item.variacaoId,
         tipo: "SAIDA",
         origem,
         quantidade: item.quantidade,
@@ -106,11 +117,11 @@ async function aplicarItens(
       },
     })
 
-    total += produto.precoVenda * item.quantidade
+    total += variacao.produto.precoVenda * item.quantidade
     if (custo === null) {
       lucroTotal = null
     } else if (lucroTotal !== null) {
-      lucroTotal += (produto.precoVenda - custo) * item.quantidade
+      lucroTotal += (variacao.produto.precoVenda - custo) * item.quantidade
     }
   }
 
@@ -126,13 +137,13 @@ async function reverterItens(
 ) {
   const itens = await tx.vendaItem.findMany({ where: { vendaId } })
   for (const item of itens) {
-    await tx.produto.update({
-      where: { id: item.produtoId },
+    await tx.variacao.update({
+      where: { id: item.variacaoId },
       data: { estoqueAtual: { increment: item.quantidade } },
     })
     await tx.movimentacaoEstoque.create({
       data: {
-        produtoId: item.produtoId,
+        variacaoId: item.variacaoId,
         tipo: "ENTRADA",
         origem,
         quantidade: item.quantidade,

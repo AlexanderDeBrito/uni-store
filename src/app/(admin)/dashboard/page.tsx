@@ -43,14 +43,14 @@ export default async function DashboardPage() {
         where: { data: { gte: inicioMes } },
         _sum: { total: true, lucroTotal: true },
       }),
-      db.produto.aggregate({ _sum: { estoqueAtual: true } }),
+      db.variacao.aggregate({ _sum: { estoqueAtual: true } }),
       db.venda.findMany({
-        include: { itens: { include: { produto: { include: { modelo: true } } } } },
+        include: { itens: { include: { variacao: { include: { produto: true } } } } },
         orderBy: { data: "desc" },
         take: 5,
       }),
       db.vendaItem.groupBy({
-        by: ["produtoId"],
+        by: ["variacaoId"],
         _sum: { quantidade: true },
       }),
       db.pedidoProducao.findMany({
@@ -62,19 +62,17 @@ export default async function DashboardPage() {
       }),
     ])
 
-  // Modelo mais vendido: soma as quantidades de todas as SKUs de cada modelo.
-  const produtos = await db.produto.findMany({
-    where: { id: { in: porProduto.map((p) => p.produtoId) } },
-    include: { modelo: true },
+  // Modelo mais vendido: soma as quantidades de todas as variações do modelo.
+  const variacoes = await db.variacao.findMany({
+    where: { id: { in: porProduto.map((p) => p.variacaoId) } },
+    include: { produto: { include: { modelo: true } } },
   })
   const porModelo = new Map<string, number>()
   for (const linha of porProduto) {
-    const produto = produtos.find((p) => p.id === linha.produtoId)
-    if (!produto) continue
-    porModelo.set(
-      produto.modelo.nome,
-      (porModelo.get(produto.modelo.nome) ?? 0) + (linha._sum.quantidade ?? 0)
-    )
+    const variacao = variacoes.find((v) => v.id === linha.variacaoId)
+    if (!variacao) continue
+    const nome = variacao.produto.modelo?.nome ?? variacao.produto.nome
+    porModelo.set(nome, (porModelo.get(nome) ?? 0) + (linha._sum.quantidade ?? 0))
   }
   const maisVendido = [...porModelo.entries()].sort((a, b) => b[1] - a[1])[0]
 
@@ -148,8 +146,8 @@ export default async function DashboardPage() {
           icone={Package}
           etiqueta="Peças em estoque"
           valor={String(estoque._sum.estoqueAtual ?? 0)}
-          detalhe="todas as SKUs"
-          marcador="SKUs"
+          detalhe="todas as variações"
+          marcador="Variações"
         />
       </div>
 
@@ -224,7 +222,7 @@ export default async function DashboardPage() {
                       {v.itens
                         .map(
                           (i) =>
-                            `${i.quantidade}× ${i.produto.modelo.nome} ${i.produto.cor} ${i.produto.tamanho}`
+                            `${i.quantidade}× ${i.variacao.produto.nome} ${i.variacao.cor} ${i.variacao.tamanho}`
                         )
                         .join(", ")}
                     </td>

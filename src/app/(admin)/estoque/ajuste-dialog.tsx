@@ -19,13 +19,13 @@ import { Textarea } from "@/components/ui/textarea"
 import { estadoInicial } from "@/server/action-state"
 import { registrarAjuste } from "@/server/estoque"
 
-type ProdutoOption = { id: string; label: string; estoqueAtual: number }
+type VariacaoOption = { id: string; label: string; estoqueAtual: number }
 
 export function AjusteDialog({
-  produtos,
+  variacoes,
   trigger,
 }: {
-  produtos: ProdutoOption[]
+  variacoes: VariacaoOption[]
   trigger: React.ReactElement
 }) {
   const [open, setOpen] = useState(false)
@@ -55,11 +55,11 @@ export function AjusteDialog({
         <form action={action} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="aj-produto">Produto *</Label>
-            <NativeSelect id="aj-produto" name="produtoId" required defaultValue="">
+            <NativeSelect id="aj-produto" name="variacaoId" required defaultValue="">
               <option value="" disabled>
                 Selecione o produto
               </option>
-              {produtos.map((p) => (
+              {variacoes.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.label} (saldo: {p.estoqueAtual})
                 </option>

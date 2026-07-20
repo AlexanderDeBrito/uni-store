@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation"
 import { CalendarDays, Clock, MapPin } from "lucide-react"
 import { db } from "@/lib/db"
+import { descreverVariacao } from "@/lib/produto"
 import { ReservaForm } from "./reserva-form"
 
 export const dynamic = "force-dynamic"
@@ -35,7 +36,7 @@ export default async function ReservaPublicaPage({
     where: { slug },
     include: {
       produtos: {
-        include: { produto: { include: { modelo: true } } },
+        include: { variacao: { include: { produto: true } } },
       },
     },
   })
@@ -52,10 +53,10 @@ export default async function ReservaPublicaPage({
   // Só entram peças escolhidas para este evento e que ainda têm saldo livre.
   const disponiveis = evento.produtos
     .map((ep) => ({
-      id: ep.produto.id,
-      label: `${ep.produto.modelo.nome} ${ep.produto.cor} — ${ep.produto.tamanho}`,
-      precoVenda: ep.produto.precoVenda,
-      disponivel: ep.produto.estoqueAtual - ep.produto.estoqueReservado,
+      id: ep.variacao.id,
+      label: `${ep.variacao.produto.nome} ${descreverVariacao(ep.variacao)}`,
+      precoVenda: ep.variacao.produto.precoVenda,
+      disponivel: ep.variacao.estoqueAtual - ep.variacao.estoqueReservado,
     }))
     .filter((p) => p.disponivel > 0)
 
