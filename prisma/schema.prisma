@@ -1,4 +1,4 @@
-// UNI STORE — Fase 1
+// UNI STORE ERP
 // Valores monetários são armazenados em centavos (Int).
 
 generator client {
@@ -23,10 +23,10 @@ model Usuario {
 }
 
 model Setor {
-  id       String  @id @default(cuid())
-  nome     String  @unique
-  regiao   String?
-  ativo    Boolean @default(true)
+  id     String  @id @default(cuid())
+  nome   String  @unique
+  regiao String?
+  ativo  Boolean @default(true)
 
   congregacoes Congregacao[]
 }
@@ -41,14 +41,16 @@ model Congregacao {
 
   clientes Cliente[]
   vendas   Venda[]
+  reservas Reserva[]
 
   @@unique([nome, setorId])
 }
 
 model Cliente {
   id            String       @id @default(cuid())
-  cpf           String       @unique // somente dígitos
+  cpf           String?      @unique // somente dígitos; opcional
   nome          String
+  telefone      String?
   congregacaoId String?
   congregacao   Congregacao? @relation(fields: [congregacaoId], references: [id])
   criadoEm      DateTime     @default(now())
@@ -57,22 +59,40 @@ model Cliente {
   vendas Venda[]
 }
 
+/// Modelo de peça (ex: "Camiseta Conferência 2026"), com arte para identificação visual.
+model Modelo {
+  id           String   @id @default(cuid())
+  nome         String   @unique
+  descricao    String?
+  arquivoUrl   String? // arte no Supabase Storage
+  arquivoNome  String?
+  arquivoTipo  String? // image/png, application/pdf ...
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  produtos    Produto[]
+  pedidoItens PedidoProducaoItem[]
+}
+
 model Produto {
-  id               String   @id @default(cuid())
-  modelo           String
-  cor              String
-  tamanho          String
-  precoVenda       Int // centavos
-  custoReferencia  Int? // centavos
-  descricao        String?
-  estoqueAtual     Int      @default(0) // cache; fonte de verdade é MovimentacaoEstoque
-  criadoEm         DateTime @default(now())
-  atualizadoEm     DateTime @updatedAt
+  id              String   @id @default(cuid())
+  modeloId        String
+  modelo          Modelo   @relation(fields: [modeloId], references: [id])
+  cor             String
+  tamanho         String
+  precoVenda      Int // centavos
+  custoReferencia Int? // centavos
+  descricao       String?
+  estoqueAtual    Int      @default(0) // cache; fonte de verdade é MovimentacaoEstoque
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @updatedAt
 
   movimentacoes MovimentacaoEstoque[]
   vendaItens    VendaItem[]
+  reservas      Reserva[]
 
-  @@unique([modelo, cor, tamanho])
+  @@unique([modeloId, cor, tamanho])
 }
 
 enum TipoMovimentacao {
@@ -88,6 +108,8 @@ enum OrigemMovimentacao {
   EDICAO_VENDA
   EXCLUSAO_VENDA
   AJUSTE_MANUAL
+  RETIRADA_RESERVA
+  CANCELAMENTO_RESERVA
 }
 
 model MovimentacaoEstoque {
@@ -97,11 +119,13 @@ model MovimentacaoEstoque {
   tipo          TipoMovimentacao
   origem        OrigemMovimentacao
   quantidade    Int // sempre positiva; o tipo define o sinal
-  custoUnitario Int? // centavos; obrigatório em entradas de produção (validado na aplicação)
+  custoUnitario Int? // centavos; obrigatório em entradas de produção
   data          DateTime           @default(now())
   observacao    String?
   vendaId       String?
   venda         Venda?             @relation(fields: [vendaId], references: [id], onDelete: SetNull)
+  pedidoId      String?
+  pedido        PedidoProducao?    @relation(fields: [pedidoId], references: [id], onDelete: SetNull)
   usuarioId     String?
   usuario       Usuario?           @relation(fields: [usuarioId], references: [id])
   criadoEm      DateTime           @default(now())
@@ -115,16 +139,44 @@ enum FormaPagamento {
   DINHEIRO
 }
 
+enum StatusEvento {
+  PLANEJADO
+  ATIVO
+  ENCERRADO
+}
+
+/// Evento (vigília, conferência, Copa...). Agrupa vendas, reservas e produção.
+model Evento {
+  id            String       @id @default(cuid())
+  nome          String
+  slug          String       @unique // usado no link público de reserva
+  descricao     String?
+  local         String?
+  dataInicio    DateTime
+  dataFim       DateTime?
+  prazoReserva  DateTime? // depois disso o link público fecha
+  status        StatusEvento @default(PLANEJADO)
+  criadoEm      DateTime     @default(now())
+  atualizadoEm  DateTime     @updatedAt
+
+  vendas   Venda[]
+  reservas Reserva[]
+  pedidos  PedidoProducao[]
+}
+
 model Venda {
   id             String         @id @default(cuid())
-  clienteId      String
-  cliente        Cliente        @relation(fields: [clienteId], references: [id])
-  congregacaoId  String
-  congregacao    Congregacao    @relation(fields: [congregacaoId], references: [id])
-  liderNome      String // snapshot editável do líder no momento da venda
+  clienteId      String?
+  cliente        Cliente?       @relation(fields: [clienteId], references: [id])
+  clienteNome    String // sempre preenchido (único campo obrigatório do cliente)
+  congregacaoId  String?
+  congregacao    Congregacao?   @relation(fields: [congregacaoId], references: [id])
+  liderNome      String?
+  eventoId       String?
+  evento         Evento?        @relation(fields: [eventoId], references: [id], onDelete: SetNull)
   formaPagamento FormaPagamento
   total          Int // centavos
-  lucroTotal     Int? // centavos; null = "não calculado" (sem custo conhecido)
+  lucroTotal     Int? // centavos; null = "não calculado"
   observacoes    String?
   data           DateTime       @default(now())
   usuarioId      String?
@@ -149,4 +201,81 @@ model VendaItem {
   custoUnitario Int? // centavos; snapshot do custo médio na venda
 
   @@index([produtoId])
+}
+
+enum StatusReserva {
+  RESERVADA
+  RETIRADA
+  CANCELADA
+}
+
+/// Reserva feita pelo cliente no link público do evento; baixa o estoque só na retirada.
+model Reserva {
+  id                    String          @id @default(cuid())
+  codigo                String          @unique // ex: R-0042
+  nome                  String
+  telefone              String
+  cpf                   String?
+  congregacaoId         String?
+  congregacao           Congregacao?    @relation(fields: [congregacaoId], references: [id])
+  eventoId              String
+  evento                Evento          @relation(fields: [eventoId], references: [id])
+  produtoId             String
+  produto               Produto         @relation(fields: [produtoId], references: [id])
+  quantidade            Int
+  formaPagamento        FormaPagamento // pretendida
+  formaPagamentoEfetiva FormaPagamento? // registrada na retirada
+  status                StatusReserva   @default(RESERVADA)
+  observacoes           String?
+  dataReserva           DateTime        @default(now())
+  dataRetirada          DateTime?
+
+  @@index([eventoId, status])
+}
+
+enum StatusPedidoProducao {
+  ENCOMENDADO
+  RECEBIDO_PARCIAL
+  RECEBIDO
+  CANCELADO
+}
+
+/// Pedido de fabricação enviado ao fornecedor; ao confirmar recebimento vira estoque.
+model PedidoProducao {
+  id                  String               @id @default(cuid())
+  identificacao       String // ex: "Lote Conferência 2026"
+  fornecedor          String?
+  eventoId            String?
+  evento              Evento?              @relation(fields: [eventoId], references: [id], onDelete: SetNull)
+  dataPedido          DateTime
+  dataPrevisaoEntrega DateTime
+  dataRecebimento     DateTime?
+  precoPorPeca        Int // centavos
+  precoVendaSugerido  Int? // centavos; usado ao criar SKUs novas no recebimento
+  arteUrl             String? // arte no Supabase Storage
+  arteNome            String?
+  arteTipo            String?
+  status              StatusPedidoProducao @default(ENCOMENDADO)
+  observacoes         String?
+  criadoEm            DateTime             @default(now())
+  atualizadoEm        DateTime             @updatedAt
+
+  itens         PedidoProducaoItem[]
+  movimentacoes MovimentacaoEstoque[]
+
+  @@index([status, dataPrevisaoEntrega])
+}
+
+model PedidoProducaoItem {
+  id                 String         @id @default(cuid())
+  pedidoId           String
+  pedido             PedidoProducao @relation(fields: [pedidoId], references: [id], onDelete: Cascade)
+  modeloId           String
+  modelo             Modelo         @relation(fields: [modeloId], references: [id])
+  cor                String
+  tamanho            String
+  quantidadePedida   Int
+  quantidadeRecebida Int            @default(0)
+
+  @@index([pedidoId])
 }

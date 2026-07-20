@@ -12,7 +12,9 @@ function Dialog({ ...props }: DialogPrimitive.Root.Props) {
 }
 
 function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {
-  return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />
+  // Sem data-slot: quando o trigger usa `render={<Button/>}`, o atributo do
+  // Button conflita com o daqui e gera hydration mismatch.
+  return <DialogPrimitive.Trigger {...props} />
 }
 
 function DialogPortal({ ...props }: DialogPrimitive.Portal.Props) {

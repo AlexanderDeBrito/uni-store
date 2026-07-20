@@ -10,11 +10,17 @@ import { custoUnitarioProduto } from "./custo"
 
 type Tx = Prisma.TransactionClient
 
+// Só nome do cliente, produto e forma de pagamento são obrigatórios.
 const vendaSchema = z.object({
-  cpf: z.string().refine((v) => validarCpf(v), "CPF inválido"),
   nome: z.string().trim().min(1, "Informe o nome do cliente"),
-  congregacaoId: z.string().min(1, "Selecione a congregação"),
-  liderNome: z.string().trim().min(1, "Informe o líder de jovens"),
+  cpf: z
+    .string()
+    .trim()
+    .optional()
+    .refine((v) => !v || validarCpf(v), "CPF inválido"),
+  congregacaoId: z.string().optional(),
+  liderNome: z.string().trim().optional(),
+  eventoId: z.string().optional(),
   formaPagamento: z.enum(["CARTAO", "PIX", "DINHEIRO"], {
     message: "Selecione a forma de pagamento",
   }),
@@ -54,6 +60,7 @@ async function aplicarItens(
   for (const item of itens) {
     const produto = await tx.produto.findUnique({
       where: { id: item.produtoId },
+      include: { modelo: true },
     })
     if (!produto) throw new Error("Produto não encontrado.")
 
@@ -67,7 +74,7 @@ async function aplicarItens(
         select: { estoqueAtual: true },
       })
       throw new Error(
-        `Estoque insuficiente de ${produto.modelo} ${produto.cor} — ${produto.tamanho}. Disponível: ${atual?.estoqueAtual ?? 0}`
+        `Estoque insuficiente de ${produto.modelo.nome} ${produto.cor} — ${produto.tamanho}. Disponível: ${atual?.estoqueAtual ?? 0}`
       )
     }
 
@@ -135,15 +142,21 @@ async function reverterItens(
   await tx.vendaItem.deleteMany({ where: { vendaId } })
 }
 
-async function upsertCliente(tx: Tx, payload: VendaPayload) {
-  const cpf = limparCpf(payload.cpf)
+/** Só mantém cadastro de cliente quando há CPF (chave do cliente recorrente). */
+async function resolverCliente(tx: Tx, dados: VendaPayload) {
+  const cpf = dados.cpf ? limparCpf(dados.cpf) : ""
+  if (!cpf) return null
+
   return tx.cliente.upsert({
     where: { cpf },
-    update: { nome: payload.nome, congregacaoId: payload.congregacaoId },
+    update: {
+      nome: dados.nome,
+      ...(dados.congregacaoId && { congregacaoId: dados.congregacaoId }),
+    },
     create: {
       cpf,
-      nome: payload.nome,
-      congregacaoId: payload.congregacaoId,
+      nome: dados.nome,
+      congregacaoId: dados.congregacaoId || null,
     },
   })
 }
@@ -159,12 +172,14 @@ export async function criarVenda(payload: VendaPayload): Promise<VendaResult> {
 
   try {
     const vendaId = await db.$transaction(async (tx) => {
-      const cliente = await upsertCliente(tx, dados)
+      const cliente = await resolverCliente(tx, dados)
       const venda = await tx.venda.create({
         data: {
-          clienteId: cliente.id,
-          congregacaoId: dados.congregacaoId,
-          liderNome: dados.liderNome,
+          clienteId: cliente?.id ?? null,
+          clienteNome: dados.nome,
+          congregacaoId: dados.congregacaoId || null,
+          liderNome: dados.liderNome || null,
+          eventoId: dados.eventoId || null,
           formaPagamento: dados.formaPagamento,
           observacoes: dados.observacoes || null,
           total: 0,
@@ -187,7 +202,7 @@ export async function criarVenda(payload: VendaPayload): Promise<VendaResult> {
 
     revalidatePath("/vendas")
     revalidatePath("/estoque")
-    revalidatePath("/")
+    revalidatePath("/dashboard")
     return { ok: true, message: "Venda registrada.", vendaId }
   } catch (e) {
     return { ok: false, message: (e as Error).message }
@@ -213,7 +228,7 @@ export async function editarVenda(
 
       await reverterItens(tx, vendaId, "EDICAO_VENDA", session.user.id)
 
-      const cliente = await upsertCliente(tx, dados)
+      const cliente = await resolverCliente(tx, dados)
       const { total, lucroTotal } = await aplicarItens(
         tx,
         vendaId,
@@ -224,9 +239,11 @@ export async function editarVenda(
       await tx.venda.update({
         where: { id: vendaId },
         data: {
-          clienteId: cliente.id,
-          congregacaoId: dados.congregacaoId,
-          liderNome: dados.liderNome,
+          clienteId: cliente?.id ?? null,
+          clienteNome: dados.nome,
+          congregacaoId: dados.congregacaoId || null,
+          liderNome: dados.liderNome || null,
+          eventoId: dados.eventoId || null,
           formaPagamento: dados.formaPagamento,
           observacoes: dados.observacoes || null,
           total,
@@ -237,7 +254,7 @@ export async function editarVenda(
 
     revalidatePath("/vendas")
     revalidatePath("/estoque")
-    revalidatePath("/")
+    revalidatePath("/dashboard")
     return { ok: true, message: "Venda atualizada.", vendaId }
   } catch (e) {
     return { ok: false, message: (e as Error).message }
@@ -258,7 +275,7 @@ export async function excluirVenda(vendaId: string): Promise<VendaResult> {
 
     revalidatePath("/vendas")
     revalidatePath("/estoque")
-    revalidatePath("/")
+    revalidatePath("/dashboard")
     return { ok: true, message: "Venda excluída e estoque devolvido." }
   } catch (e) {
     return { ok: false, message: (e as Error).message }

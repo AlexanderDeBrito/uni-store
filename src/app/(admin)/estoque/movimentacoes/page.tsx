@@ -33,6 +33,8 @@ const LABEL_ORIGEM: Record<string, string> = {
   EDICAO_VENDA: "Edição de venda",
   EXCLUSAO_VENDA: "Exclusão de venda",
   AJUSTE_MANUAL: "Ajuste manual",
+  RETIRADA_RESERVA: "Retirada de reserva",
+  CANCELAMENTO_RESERVA: "Cancelamento de reserva",
 }
 
 export default async function MovimentacoesPage({
@@ -45,7 +47,7 @@ export default async function MovimentacoesPage({
 
   const [produtos, movimentacoes] = await Promise.all([
     db.produto.findMany({
-      orderBy: [{ modelo: "asc" }, { cor: "asc" }, { tamanho: "asc" }],
+      orderBy: [{ modelo: { nome: "asc" } }, { cor: "asc" }, { tamanho: "asc" }],
       select: { id: true, modelo: true, cor: true, tamanho: true },
     }),
     db.movimentacaoEstoque.findMany({
@@ -78,7 +80,7 @@ export default async function MovimentacoesPage({
       <FiltroProduto
         produtos={produtos.map((p) => ({
           id: p.id,
-          label: `${p.modelo} ${p.cor} — ${p.tamanho}`,
+          label: `${p.modelo.nome} ${p.cor} — ${p.tamanho}`,
         }))}
         produtoSelecionado={produtoId ?? ""}
       />
@@ -120,7 +122,7 @@ export default async function MovimentacoesPage({
                       {m.data.toLocaleDateString("pt-BR")}
                     </TableCell>
                     <TableCell className="font-medium">
-                      {m.produto.modelo} {m.produto.cor} — {m.produto.tamanho}
+                      {m.produto.modelo.nome} {m.produto.cor} — {m.produto.tamanho}
                     </TableCell>
                     <TableCell>
                       <Badge variant={tipo.entrada ? "secondary" : "outline"}>

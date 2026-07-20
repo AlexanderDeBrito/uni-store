@@ -1,5 +1,6 @@
 import { db } from "@/lib/db"
 import { requireAuth } from "@/lib/auth"
+import { PageHeader } from "@/components/layout/page-header"
 import { VendaForm } from "../venda-form"
 
 export const metadata = { title: "Nova venda — UNI STORE" }
@@ -7,27 +8,27 @@ export const metadata = { title: "Nova venda — UNI STORE" }
 export default async function NovaVendaPage() {
   await requireAuth()
 
-  const [setores, congregacoes, produtos] = await Promise.all([
+  const [setores, congregacoes, produtos, eventos] = await Promise.all([
     db.setor.findMany({ where: { ativo: true }, orderBy: { nome: "asc" } }),
-    db.congregacao.findMany({
-      where: { ativo: true },
-      orderBy: { nome: "asc" },
-    }),
+    db.congregacao.findMany({ where: { ativo: true }, orderBy: { nome: "asc" } }),
     db.produto.findMany({
-      orderBy: [{ modelo: "asc" }, { cor: "asc" }, { tamanho: "asc" }],
+      include: { modelo: true },
+      orderBy: [{ modelo: { nome: "asc" } }, { cor: "asc" }, { tamanho: "asc" }],
+    }),
+    db.evento.findMany({
+      where: { status: { in: ["PLANEJADO", "ATIVO"] } },
+      orderBy: { dataInicio: "desc" },
+      select: { id: true, nome: true },
     }),
   ])
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold uppercase tracking-tight lg:text-3xl">
-          Nova venda
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          A confirmação desconta do estoque em tempo real
-        </p>
-      </div>
+    <div className="mx-auto max-w-3xl">
+      <PageHeader
+        eyebrow="Movimento"
+        titulo="Nova venda"
+        subtitulo="A confirmação desconta do estoque em tempo real"
+      />
       <VendaForm
         setores={setores.map((s) => ({ id: s.id, nome: s.nome }))}
         congregacoes={congregacoes.map((c) => ({
@@ -38,10 +39,11 @@ export default async function NovaVendaPage() {
         }))}
         produtos={produtos.map((p) => ({
           id: p.id,
-          label: `${p.modelo} ${p.cor} — ${p.tamanho}`,
+          label: `${p.modelo.nome} ${p.cor} — ${p.tamanho}`,
           precoVenda: p.precoVenda,
           estoqueAtual: p.estoqueAtual,
         }))}
+        eventos={eventos}
       />
     </div>
   )

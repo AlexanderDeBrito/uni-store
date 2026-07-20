@@ -5,12 +5,6 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Loader2, Plus, Trash2, UserCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
@@ -34,6 +28,7 @@ export type ProdutoOption = {
   precoVenda: number
   estoqueAtual: number
 }
+export type EventoOption = { id: string; nome: string }
 
 type ItemForm = { produtoId: string; quantidade: number }
 
@@ -44,20 +39,45 @@ export type VendaInicial = {
   setorId: string
   congregacaoId: string
   liderNome: string
+  eventoId: string
   formaPagamento: string
   observacoes: string
   itens: ItemForm[]
+}
+
+function Secao({
+  titulo,
+  descricao,
+  children,
+}: {
+  titulo: string
+  descricao?: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="card-surface p-5">
+      <div className="mb-4">
+        <h2 className="font-semibold text-neutral-900">{titulo}</h2>
+        {descricao && (
+          <p className="mt-0.5 text-xs text-neutral-400">{descricao}</p>
+        )}
+      </div>
+      {children}
+    </section>
+  )
 }
 
 export function VendaForm({
   setores,
   congregacoes,
   produtos,
+  eventos,
   vendaInicial,
 }: {
   setores: SetorOption[]
   congregacoes: CongregacaoOption[]
   produtos: ProdutoOption[]
+  eventos: EventoOption[]
   vendaInicial?: VendaInicial
 }) {
   const router = useRouter()
@@ -66,7 +86,7 @@ export function VendaForm({
   const [recorrente, setRecorrente] = useState(false)
 
   const [cpf, setCpf] = useState(
-    vendaInicial ? formatarCpf(vendaInicial.cpf) : ""
+    vendaInicial?.cpf ? formatarCpf(vendaInicial.cpf) : ""
   )
   const [nome, setNome] = useState(vendaInicial?.nome ?? "")
   const [setorId, setSetorId] = useState(vendaInicial?.setorId ?? "")
@@ -74,12 +94,11 @@ export function VendaForm({
     vendaInicial?.congregacaoId ?? ""
   )
   const [lider, setLider] = useState(vendaInicial?.liderNome ?? "")
+  const [eventoId, setEventoId] = useState(vendaInicial?.eventoId ?? "")
   const [formaPagamento, setFormaPagamento] = useState(
     vendaInicial?.formaPagamento ?? ""
   )
-  const [observacoes, setObservacoes] = useState(
-    vendaInicial?.observacoes ?? ""
-  )
+  const [observacoes, setObservacoes] = useState(vendaInicial?.observacoes ?? "")
   const [itens, setItens] = useState<ItemForm[]>(
     vendaInicial?.itens ?? [{ produtoId: "", quantidade: 1 }]
   )
@@ -98,7 +117,21 @@ export function VendaForm({
     [itens, produtos]
   )
 
-  const cpfValido = validarCpf(cpf)
+  const cpfPreenchido = cpf.replace(/\D/g, "").length > 0
+  const cpfValido = !cpfPreenchido || validarCpf(cpf)
+
+  // Estoque insuficiente em algum item bloqueia a confirmação.
+  const itemSemEstoque = itens.some((item) => {
+    const p = produtos.find((x) => x.id === item.produtoId)
+    return p ? item.quantidade > p.estoqueAtual : false
+  })
+
+  const podeEnviar =
+    nome.trim().length > 0 &&
+    formaPagamento !== "" &&
+    itens.some((i) => i.produtoId) &&
+    cpfValido &&
+    !itemSemEstoque
 
   async function aoConcluirCpf(valor: string) {
     if (!validarCpf(valor)) return
@@ -140,10 +173,11 @@ export function VendaForm({
 
   function enviar() {
     const payload: VendaPayload = {
-      cpf: limparCpf(cpf),
       nome: nome.trim(),
-      congregacaoId,
-      liderNome: lider.trim(),
+      cpf: cpfPreenchido ? limparCpf(cpf) : undefined,
+      congregacaoId: congregacaoId || undefined,
+      liderNome: lider.trim() || undefined,
+      eventoId: eventoId || undefined,
       formaPagamento: formaPagamento as VendaPayload["formaPagamento"],
       observacoes: observacoes.trim() || undefined,
       itens: itens
@@ -166,59 +200,60 @@ export function VendaForm({
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            Cliente
-            {recorrente && (
-              <span className="flex items-center gap-1 text-sm font-normal text-muted-foreground">
-                <UserCheck className="size-4" /> recorrente
-              </span>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+      <Secao
+        titulo="Cliente"
+        descricao="Só o nome é obrigatório — CPF, setor e congregação são opcionais"
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="v-cpf">CPF *</Label>
+            <Label htmlFor="v-nome">
+              Nome completo <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="v-nome"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              placeholder="Nome do cliente"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="v-cpf" className="flex items-center gap-2">
+              CPF
+              {recorrente && (
+                <span className="flex items-center gap-1 text-xs font-normal text-neutral-500">
+                  <UserCheck className="size-3.5" /> recorrente
+                </span>
+              )}
+            </Label>
             <div className="relative">
               <Input
                 id="v-cpf"
                 inputMode="numeric"
-                placeholder="000.000.000-00"
+                placeholder="opcional"
                 value={cpf}
                 onChange={(e) => {
                   const formatado = formatarCpf(e.target.value)
                   setCpf(formatado)
                   aoConcluirCpf(formatado)
                 }}
-                aria-invalid={cpf.length === 14 && !cpfValido}
+                aria-invalid={!cpfValido}
               />
               {buscandoCpf && (
-                <Loader2 className="absolute top-1/2 right-2.5 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+                <Loader2 className="absolute top-1/2 right-2.5 size-4 -translate-y-1/2 animate-spin text-neutral-400" />
               )}
             </div>
-            {cpf.length === 14 && !cpfValido && (
+            {!cpfValido && (
               <p className="text-sm text-destructive">CPF inválido.</p>
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="v-nome">Nome completo *</Label>
-            <Input
-              id="v-nome"
-              value={nome}
-              onChange={(e) => setNome(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="v-setor">Setor da congregação *</Label>
+            <Label htmlFor="v-setor">Setor da congregação</Label>
             <NativeSelect
               id="v-setor"
               value={setorId}
               onChange={(e) => selecionarSetor(e.target.value)}
             >
-              <option value="" disabled>
-                Selecione o setor
-              </option>
+              <option value="">Não informar</option>
               {setores.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.nome}
@@ -227,15 +262,15 @@ export function VendaForm({
             </NativeSelect>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="v-cong">Congregação *</Label>
+            <Label htmlFor="v-cong">Congregação</Label>
             <NativeSelect
               id="v-cong"
               value={congregacaoId}
               onChange={(e) => selecionarCongregacao(e.target.value)}
               disabled={!setorId}
             >
-              <option value="" disabled>
-                {setorId ? "Selecione a congregação" : "Escolha o setor antes"}
+              <option value="">
+                {setorId ? "Não informar" : "Escolha o setor antes"}
               </option>
               {congregacoesDoSetor.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -245,7 +280,7 @@ export function VendaForm({
             </NativeSelect>
           </div>
           <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="v-lider">Líder de jovens *</Label>
+            <Label htmlFor="v-lider">Líder de jovens</Label>
             <Input
               id="v-lider"
               value={lider}
@@ -253,23 +288,27 @@ export function VendaForm({
               placeholder="Preenchido pela congregação; pode editar"
             />
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </Secao>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Produtos</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <Secao
+        titulo="Produtos"
+        descricao="Só é possível vender o que existe em estoque"
+      >
+        <div className="space-y-3">
           {itens.map((item, index) => {
             const produto = produtos.find((p) => p.id === item.produtoId)
-            const estoqueBaixo =
+            const semEstoque =
               produto && item.quantidade > produto.estoqueAtual
             return (
               <div key={index} className="space-y-1">
                 <div className="flex items-end gap-2">
                   <div className="flex-1 space-y-2">
-                    {index === 0 && <Label>Produto *</Label>}
+                    {index === 0 && (
+                      <Label>
+                        Produto <span className="text-destructive">*</span>
+                      </Label>
+                    )}
                     <NativeSelect
                       value={item.produtoId}
                       onChange={(e) =>
@@ -281,18 +320,25 @@ export function VendaForm({
                         Selecione o produto
                       </option>
                       {produtos.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.label} · {formatarBRL(p.precoVenda)} (saldo:{" "}
-                          {p.estoqueAtual})
+                        <option
+                          key={p.id}
+                          value={p.id}
+                          disabled={p.estoqueAtual === 0}
+                        >
+                          {p.label} · {formatarBRL(p.precoVenda)}
+                          {p.estoqueAtual === 0
+                            ? " (sem estoque)"
+                            : ` (saldo: ${p.estoqueAtual})`}
                         </option>
                       ))}
                     </NativeSelect>
                   </div>
                   <div className="w-20 space-y-2">
-                    {index === 0 && <Label>Qtd. *</Label>}
+                    {index === 0 && <Label>Qtd.</Label>}
                     <Input
                       type="number"
                       min={1}
+                      max={produto?.estoqueAtual}
                       step={1}
                       value={item.quantidade}
                       onChange={(e) =>
@@ -316,7 +362,7 @@ export function VendaForm({
                     variant="ghost"
                     size="icon"
                     aria-label="Remover produto"
-                    className="text-muted-foreground"
+                    className="text-neutral-400"
                     disabled={itens.length === 1}
                     onClick={() =>
                       setItens((prev) => prev.filter((_, i) => i !== index))
@@ -325,7 +371,7 @@ export function VendaForm({
                     <Trash2 className="size-4" />
                   </Button>
                 </div>
-                {estoqueBaixo && (
+                {semEstoque && (
                   <p className="text-sm text-destructive">
                     Estoque insuficiente. Disponível: {produto.estoqueAtual}
                   </p>
@@ -343,27 +389,46 @@ export function VendaForm({
           >
             <Plus className="size-4" /> Adicionar produto
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </Secao>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Pagamento</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-3 gap-2">
-            {FORMAS_PAGAMENTO.map((f) => (
-              <Button
-                key={f.value}
-                type="button"
-                variant={formaPagamento === f.value ? "default" : "outline"}
-                onClick={() => setFormaPagamento(f.value)}
-                className="h-11"
-              >
-                {f.label}
-              </Button>
-            ))}
+      <Secao titulo="Pagamento e evento">
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>
+              Forma de pagamento <span className="text-destructive">*</span>
+            </Label>
+            <div className="grid grid-cols-3 gap-2">
+              {FORMAS_PAGAMENTO.map((f) => (
+                <Button
+                  key={f.value}
+                  type="button"
+                  variant={formaPagamento === f.value ? "default" : "outline"}
+                  onClick={() => setFormaPagamento(f.value)}
+                  className="h-11 rounded-xl"
+                >
+                  {f.label}
+                </Button>
+              ))}
+            </div>
           </div>
+          {eventos.length > 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="v-evento">Evento</Label>
+              <NativeSelect
+                id="v-evento"
+                value={eventoId}
+                onChange={(e) => setEventoId(e.target.value)}
+              >
+                <option value="">Venda avulsa (sem evento)</option>
+                {eventos.map((ev) => (
+                  <option key={ev.id} value={ev.id}>
+                    {ev.nome}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="v-obs">Observações</Label>
             <Textarea
@@ -373,19 +438,19 @@ export function VendaForm({
               onChange={(e) => setObservacoes(e.target.value)}
             />
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </Secao>
 
-      <div className="sticky bottom-0 -mx-4 flex items-center justify-between gap-4 border-t bg-white p-4 lg:mx-0 lg:rounded-lg lg:border">
+      <div className="card-surface sticky bottom-0 flex items-center justify-between gap-4 p-4">
         <div>
-          <p className="text-sm text-muted-foreground">Total</p>
+          <p className="eyebrow">Total</p>
           <p className="text-2xl font-bold">{formatarBRL(total)}</p>
         </div>
         <Button
           size="lg"
           onClick={enviar}
-          disabled={pending}
-          className="min-w-40"
+          disabled={pending || !podeEnviar}
+          className="min-w-40 rounded-xl"
         >
           {pending && <Loader2 className="animate-spin" />}
           {vendaInicial ? "Salvar alterações" : "Confirmar venda"}

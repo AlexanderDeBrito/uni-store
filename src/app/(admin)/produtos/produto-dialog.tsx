@@ -21,7 +21,7 @@ import { salvarProduto } from "@/server/produtos"
 
 type Produto = {
   id: string
-  modelo: string
+  modeloId: string
   cor: string
   tamanho: string
   precoVenda: number
@@ -35,9 +35,11 @@ function centavosParaInput(v: number | null): string {
 }
 
 export function ProdutoDialog({
+  modelos,
   produto,
   trigger,
 }: {
+  modelos: { id: string; nome: string; ativo: boolean }[]
   produto?: Produto
   trigger: React.ReactElement
 }) {
@@ -62,17 +64,26 @@ export function ProdutoDialog({
         </DialogHeader>
         <form action={action} className="space-y-4">
           {produto && <input type="hidden" name="id" value={produto.id} />}
+          <div className="space-y-2">
+            <Label htmlFor="prod-modelo">Modelo *</Label>
+            <NativeSelect
+              id="prod-modelo"
+              name="modeloId"
+              defaultValue={produto?.modeloId ?? ""}
+              required
+            >
+              <option value="" disabled>
+                Selecione o modelo
+              </option>
+              {modelos.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.nome}
+                  {!m.ativo ? " (inativo)" : ""}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label htmlFor="prod-modelo">Modelo *</Label>
-              <Input
-                id="prod-modelo"
-                name="modelo"
-                defaultValue={produto?.modelo}
-                placeholder='Ex: "Camiseta"'
-                required
-              />
-            </div>
             <div className="space-y-2">
               <Label htmlFor="prod-cor">Cor *</Label>
               <Input
@@ -83,8 +94,6 @@ export function ProdutoDialog({
                 required
               />
             </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
             <div className="space-y-2">
               <Label htmlFor="prod-tamanho">Tamanho *</Label>
               <NativeSelect
@@ -103,6 +112,8 @@ export function ProdutoDialog({
                 ))}
               </NativeSelect>
             </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label htmlFor="prod-preco">Preço de venda *</Label>
               <Input
@@ -115,7 +126,7 @@ export function ProdutoDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="prod-custo">Custo ref.</Label>
+              <Label htmlFor="prod-custo">Custo de referência</Label>
               <Input
                 id="prod-custo"
                 name="custoReferencia"

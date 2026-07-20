@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Menu } from "lucide-react"
+import { Menu, Store } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/sheet"
 import { NavLinks } from "./nav-links"
 
-export function MobileMenu() {
+export function MobileMenu({ alertaPedidos = 0 }: { alertaPedidos?: number }) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -31,14 +31,20 @@ export function MobileMenu() {
       </SheetTrigger>
       <SheetContent
         side="left"
-        className="w-64 border-white/10 bg-neutral-950 p-4 text-white"
+        className="w-72 overflow-y-auto border-white/10 bg-neutral-950 p-4 text-white"
       >
         <SheetHeader className="p-0 pb-4">
-          <SheetTitle className="text-left text-sm font-bold tracking-[0.2em] text-white">
+          <SheetTitle className="flex items-center gap-2.5 text-left text-sm font-semibold tracking-[0.18em] text-white">
+            <span className="flex size-7 items-center justify-center rounded-lg bg-white">
+              <Store className="size-3.5 text-neutral-950" />
+            </span>
             UNI STORE
           </SheetTitle>
         </SheetHeader>
-        <NavLinks onNavigate={() => setOpen(false)} />
+        <NavLinks
+          onNavigate={() => setOpen(false)}
+          alertaPedidos={alertaPedidos}
+        />
       </SheetContent>
     </Sheet>
   )

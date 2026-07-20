@@ -10,7 +10,7 @@ import type { ActionState } from "./action-state"
 
 const produtoSchema = z.object({
   id: z.string().optional(),
-  modelo: z.string().trim().min(1, "Informe o modelo"),
+  modeloId: z.string().min(1, "Selecione o modelo"),
   cor: z.string().trim().min(1, "Informe a cor"),
   tamanho: z.string().trim().min(1, "Selecione o tamanho"),
   precoVenda: z.number().int().positive("Informe o preço de venda"),
@@ -33,7 +33,7 @@ export async function salvarProduto(
 
   const parsed = produtoSchema.safeParse({
     id: (formData.get("id") as string) || undefined,
-    modelo: formData.get("modelo"),
+    modeloId: formData.get("modeloId"),
     cor: formData.get("cor"),
     tamanho: formData.get("tamanho"),
     precoVenda: preco ?? 0,
@@ -44,11 +44,12 @@ export async function salvarProduto(
     return { ok: false, message: parsed.error.issues[0].message }
   }
 
-  const { id, modelo, cor, tamanho, precoVenda, custoReferencia, descricao } =
+  const { id, modeloId, cor, tamanho, precoVenda, custoReferencia, descricao } =
     parsed.data
+
   try {
     const data = {
-      modelo,
+      modeloId,
       cor,
       tamanho,
       precoVenda,
@@ -61,13 +62,10 @@ export async function salvarProduto(
       await db.produto.create({ data })
     }
   } catch (e) {
-    if (
-      e instanceof Prisma.PrismaClientKnownRequestError &&
-      e.code === "P2002"
-    ) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       return {
         ok: false,
-        message: `Já existe o produto ${modelo} ${cor} — ${tamanho}.`,
+        message: `Esse modelo já tem um produto ${cor} — ${tamanho}.`,
       }
     }
     throw e
@@ -84,7 +82,10 @@ export async function excluirProduto(id: string): Promise<ActionState> {
   const produto = await db.produto.findUnique({
     where: { id },
     include: {
-      _count: { select: { vendaItens: true, movimentacoes: true } },
+      modelo: true,
+      _count: {
+        select: { vendaItens: true, movimentacoes: true, reservas: true },
+      },
     },
   })
   if (!produto) return { ok: false, message: "Produto não encontrado." }
@@ -100,6 +101,12 @@ export async function excluirProduto(id: string): Promise<ActionState> {
       ok: false,
       message:
         "Não é possível excluir: o produto tem vendas ou movimentações registradas.",
+    }
+  }
+  if (produto._count.reservas > 0) {
+    return {
+      ok: false,
+      message: "Não é possível excluir: o produto tem reservas vinculadas.",
     }
   }
 

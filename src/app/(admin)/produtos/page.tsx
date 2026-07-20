@@ -3,20 +3,31 @@ import { db } from "@/lib/db"
 import { requireAuth } from "@/lib/auth"
 import { formatarBRL } from "@/lib/money"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { PageHeader } from "@/components/layout/page-header"
 import { FiltrosSku } from "@/components/filtros-sku"
+import { ProdutosTabs } from "./tabs"
 import { ProdutoDialog } from "./produto-dialog"
 import { ExcluirProdutoButton } from "./excluir-produto"
+import { ModeloPreview } from "./modelo-preview"
 
 export const metadata = { title: "Produtos — UNI STORE" }
+
+/** Pílula de estoque: neutra quando há saldo, destacada quando acaba. */
+function PilulaEstoque({ quantidade }: { quantidade: number }) {
+  const estilo =
+    quantidade === 0
+      ? "bg-destructive/10 text-destructive"
+      : quantidade <= 5
+        ? "bg-neutral-900 text-white"
+        : "bg-neutral-100 text-neutral-700"
+  return (
+    <span
+      className={`inline-flex min-w-9 justify-center rounded-full px-2.5 py-1 text-xs font-semibold ${estilo}`}
+    >
+      {quantidade}
+    </span>
+  )
+}
 
 export default async function ProdutosPage({
   searchParams,
@@ -26,83 +37,94 @@ export default async function ProdutosPage({
   await requireAuth()
   const { modelo, cor, tamanho } = await searchParams
 
-  const produtos = await db.produto.findMany({
-    where: {
-      modelo: modelo
-        ? { contains: modelo, mode: "insensitive" }
-        : undefined,
-      cor: cor ? { contains: cor, mode: "insensitive" } : undefined,
-      tamanho: tamanho || undefined,
-    },
-    orderBy: [{ modelo: "asc" }, { cor: "asc" }, { tamanho: "asc" }],
-  })
+  const [produtos, modelos] = await Promise.all([
+    db.produto.findMany({
+      where: {
+        modeloId: modelo || undefined,
+        cor: cor ? { contains: cor, mode: "insensitive" } : undefined,
+        tamanho: tamanho || undefined,
+      },
+      include: { modelo: true },
+      orderBy: [{ modelo: { nome: "asc" } }, { cor: "asc" }, { tamanho: "asc" }],
+    }),
+    db.modelo.findMany({ orderBy: { nome: "asc" } }),
+  ])
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-2xl font-bold uppercase tracking-tight lg:text-3xl">
-            Produtos
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Cada combinação de modelo + cor + tamanho é uma SKU única
-          </p>
-        </div>
-        <ProdutoDialog
-          trigger={
-            <Button>
-              <Plus className="size-4" /> Novo produto
-            </Button>
-          }
-        />
-      </div>
+    <div className="mx-auto max-w-7xl">
+      <PageHeader
+        eyebrow="Catálogo"
+        titulo="Produtos"
+        subtitulo="Cada combinação de modelo + cor + tamanho é uma SKU única"
+        acao={
+          <ProdutoDialog
+            modelos={modelos}
+            trigger={
+              <Button className="rounded-xl" disabled={modelos.length === 0}>
+                <Plus className="size-4" /> Novo produto
+              </Button>
+            }
+          />
+        }
+      />
 
-      <FiltrosSku />
+      <ProdutosTabs />
 
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Modelo</TableHead>
-                <TableHead>Cor</TableHead>
-                <TableHead>Tam.</TableHead>
-                <TableHead className="text-right">Preço</TableHead>
-                <TableHead className="hidden text-right sm:table-cell">
+      <FiltrosSku modelos={modelos} resultados={produtos.length} />
+
+      <div className="card-surface overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr>
+                <th className="th-label pl-6">Modelo</th>
+                <th className="th-label">Cor</th>
+                <th className="th-label">Tam.</th>
+                <th className="th-label text-right">Preço</th>
+                <th className="th-label hidden text-right sm:table-cell">
                   Custo ref.
-                </TableHead>
-                <TableHead className="text-right">Estoque</TableHead>
-                <TableHead className="w-32" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+                </th>
+                <th className="th-label text-center">Estoque</th>
+                <th className="th-label pr-6 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100">
               {produtos.length === 0 && (
-                <TableRow>
-                  <TableCell
+                <tr>
+                  <td
                     colSpan={7}
-                    className="py-10 text-center text-muted-foreground"
+                    className="px-6 py-12 text-center text-sm text-neutral-400"
                   >
-                    Nenhum produto encontrado.
-                  </TableCell>
-                </TableRow>
+                    {modelos.length === 0
+                      ? "Cadastre um modelo na aba Modelos antes de criar produtos."
+                      : "Nenhum produto encontrado."}
+                  </td>
+                </tr>
               )}
               {produtos.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell className="font-medium">{p.modelo}</TableCell>
-                  <TableCell>{p.cor}</TableCell>
-                  <TableCell>{p.tamanho}</TableCell>
-                  <TableCell className="text-right">
+                <tr key={p.id} className="transition-colors hover:bg-neutral-50/60">
+                  <td className="px-4 py-4 pl-6">
+                    <ModeloPreview modelo={p.modelo} />
+                  </td>
+                  <td className="px-4 py-4 text-sm text-neutral-700">{p.cor}</td>
+                  <td className="px-4 py-4">
+                    <span className="rounded-md bg-neutral-100 px-2 py-1 text-xs font-semibold text-neutral-600">
+                      {p.tamanho}
+                    </span>
+                  </td>
+                  <td className="px-4 py-4 text-right text-sm font-bold text-neutral-900">
                     {formatarBRL(p.precoVenda)}
-                  </TableCell>
-                  <TableCell className="hidden text-right text-muted-foreground sm:table-cell">
+                  </td>
+                  <td className="hidden px-4 py-4 text-right text-sm text-neutral-400 sm:table-cell">
                     {formatarBRL(p.custoReferencia)}
-                  </TableCell>
-                  <TableCell className="text-right font-medium">
-                    {p.estoqueAtual}
-                  </TableCell>
-                  <TableCell className="text-right">
+                  </td>
+                  <td className="px-4 py-4 text-center">
+                    <PilulaEstoque quantidade={p.estoqueAtual} />
+                  </td>
+                  <td className="px-4 py-4 pr-6 text-right">
                     <div className="flex justify-end gap-1">
                       <ProdutoDialog
+                        modelos={modelos}
                         produto={p}
                         trigger={
                           <Button variant="ghost" size="sm">
@@ -112,16 +134,16 @@ export default async function ProdutosPage({
                       />
                       <ExcluirProdutoButton
                         produtoId={p.id}
-                        descricao={`${p.modelo} ${p.cor} — ${p.tamanho}`}
+                        descricao={`${p.modelo.nome} ${p.cor} — ${p.tamanho}`}
                       />
                     </div>
-                  </TableCell>
-                </TableRow>
+                  </td>
+                </tr>
               ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }

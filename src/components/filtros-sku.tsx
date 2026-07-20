@@ -2,12 +2,19 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useRef } from "react"
+import { Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { NativeSelect } from "@/components/ui/native-select"
 import { TAMANHOS } from "@/lib/constantes"
 
 /** Filtros por modelo, cor e tamanho via query string (produtos e estoque). */
-export function FiltrosSku() {
+export function FiltrosSku({
+  modelos,
+  resultados,
+}: {
+  modelos: { id: string; nome: string }[]
+  resultados?: number
+}) {
   const router = useRouter()
   const pathname = usePathname()
   const params = useSearchParams()
@@ -26,24 +33,36 @@ export function FiltrosSku() {
   }
 
   return (
-    <div className="grid grid-cols-2 gap-2 sm:max-w-xl sm:grid-cols-3">
-      <Input
-        placeholder="Filtrar por modelo"
-        defaultValue={params.get("modelo") ?? ""}
-        onChange={(e) => aplicarComAtraso("modelo", e.target.value)}
-        className="bg-white"
-      />
-      <Input
-        placeholder="Filtrar por cor"
-        defaultValue={params.get("cor") ?? ""}
-        onChange={(e) => aplicarComAtraso("cor", e.target.value)}
-        className="bg-white"
-      />
+    <div className="mb-4 flex flex-wrap items-center gap-2">
+      <NativeSelect
+        value={params.get("modelo") ?? ""}
+        onChange={(e) => aplicar("modelo", e.target.value)}
+        aria-label="Filtrar por modelo"
+        className="h-10 w-full rounded-xl bg-white sm:w-56"
+      >
+        <option value="">Todos os modelos</option>
+        {modelos.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.nome}
+          </option>
+        ))}
+      </NativeSelect>
+
+      <div className="relative w-full sm:w-52">
+        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-neutral-400" />
+        <Input
+          placeholder="Filtrar por cor"
+          defaultValue={params.get("cor") ?? ""}
+          onChange={(e) => aplicarComAtraso("cor", e.target.value)}
+          className="h-10 rounded-xl bg-white pl-9"
+        />
+      </div>
+
       <NativeSelect
         value={params.get("tamanho") ?? ""}
         onChange={(e) => aplicar("tamanho", e.target.value)}
         aria-label="Filtrar por tamanho"
-        className="bg-white"
+        className="h-10 w-full rounded-xl bg-white sm:w-44"
       >
         <option value="">Todos os tamanhos</option>
         {TAMANHOS.map((t) => (
@@ -52,6 +71,12 @@ export function FiltrosSku() {
           </option>
         ))}
       </NativeSelect>
+
+      {resultados !== undefined && (
+        <span className="ml-auto text-sm text-neutral-400">
+          {resultados} resultado{resultados === 1 ? "" : "s"}
+        </span>
+      )}
     </div>
   )
 }

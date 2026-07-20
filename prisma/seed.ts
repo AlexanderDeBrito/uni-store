@@ -41,19 +41,26 @@ async function main() {
     ],
   })
 
+  const camiseta = await db.modelo.create({
+    data: { nome: "Camiseta", descricao: "Modelo básico de demonstração" },
+  })
+  const moletom = await db.modelo.create({
+    data: { nome: "Moletom", descricao: "Modelo de demonstração" },
+  })
+
   const produtos = await Promise.all(
     [
-      { modelo: "Camiseta", cor: "Bordô", tamanho: "P", precoVenda: 4500, custoReferencia: 2200 },
-      { modelo: "Camiseta", cor: "Bordô", tamanho: "M", precoVenda: 4500, custoReferencia: 2200 },
-      { modelo: "Camiseta", cor: "Preta", tamanho: "G", precoVenda: 4500, custoReferencia: 2200 },
-      { modelo: "Moletom", cor: "Verde", tamanho: "M", precoVenda: 12000, custoReferencia: 7000 },
-      { modelo: "Moletom", cor: "Verde", tamanho: "G", precoVenda: 12000, custoReferencia: 7000 },
+      { modeloId: camiseta.id, cor: "Bordô", tamanho: "P", precoVenda: 4500, custoReferencia: 2200 },
+      { modeloId: camiseta.id, cor: "Bordô", tamanho: "M", precoVenda: 4500, custoReferencia: 2200 },
+      { modeloId: camiseta.id, cor: "Preta", tamanho: "G", precoVenda: 4500, custoReferencia: 2200 },
+      { modeloId: moletom.id, cor: "Verde", tamanho: "M", precoVenda: 12000, custoReferencia: 7000 },
+      { modeloId: moletom.id, cor: "Verde", tamanho: "G", precoVenda: 12000, custoReferencia: 7000 },
     ].map((p) => db.produto.create({ data: p }))
   )
 
   // Entrada inicial de estoque com custo de lote para cada produto demo
   for (const p of produtos) {
-    const quantidade = p.modelo === "Moletom" ? 10 : 20
+    const quantidade = p.modeloId === moletom.id ? 10 : 20
     await db.$transaction([
       db.movimentacaoEstoque.create({
         data: {

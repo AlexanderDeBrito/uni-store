@@ -1,7 +1,10 @@
 import Link from "next/link"
 import {
+  AlertTriangle,
   CalendarDays,
   Package,
+  Plus,
+  Shirt,
   ShoppingCart,
   TrendingUp,
 } from "lucide-react"
@@ -9,22 +12,9 @@ import { db } from "@/lib/db"
 import { requireAuth } from "@/lib/auth"
 import { formatarBRL } from "@/lib/money"
 import { labelFormaPagamento } from "@/lib/constantes"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { PageHeader } from "@/components/layout/page-header"
+import { StatCard } from "@/components/layout/stat-card"
 
 export const metadata = { title: "Dashboard — UNI STORE" }
 
@@ -38,149 +28,221 @@ export default async function DashboardPage() {
   inicioSemana.setDate(inicioSemana.getDate() - inicioSemana.getDay())
   const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1)
 
-  const [dia, semana, mes, estoque, ultimasVendas] = await Promise.all([
-    db.venda.aggregate({
-      where: { data: { gte: inicioDia } },
-      _sum: { total: true },
-      _count: true,
-    }),
-    db.venda.aggregate({
-      where: { data: { gte: inicioSemana } },
-      _sum: { total: true },
-    }),
-    db.venda.aggregate({
-      where: { data: { gte: inicioMes } },
-      _sum: { total: true, lucroTotal: true },
-    }),
-    db.produto.aggregate({ _sum: { estoqueAtual: true } }),
-    db.venda.findMany({
-      include: {
-        cliente: true,
-        itens: { include: { produto: true } },
-      },
-      orderBy: { data: "desc" },
-      take: 5,
-    }),
-  ])
+  const [dia, semana, mes, estoque, ultimasVendas, porProduto, atrasados] =
+    await Promise.all([
+      db.venda.aggregate({
+        where: { data: { gte: inicioDia } },
+        _sum: { total: true },
+        _count: true,
+      }),
+      db.venda.aggregate({
+        where: { data: { gte: inicioSemana } },
+        _sum: { total: true },
+      }),
+      db.venda.aggregate({
+        where: { data: { gte: inicioMes } },
+        _sum: { total: true, lucroTotal: true },
+      }),
+      db.produto.aggregate({ _sum: { estoqueAtual: true } }),
+      db.venda.findMany({
+        include: { itens: { include: { produto: { include: { modelo: true } } } } },
+        orderBy: { data: "desc" },
+        take: 5,
+      }),
+      db.vendaItem.groupBy({
+        by: ["produtoId"],
+        _sum: { quantidade: true },
+      }),
+      db.pedidoProducao.findMany({
+        where: {
+          status: { in: ["ENCOMENDADO", "RECEBIDO_PARCIAL"] },
+          dataPrevisaoEntrega: { lt: agora },
+        },
+        orderBy: { dataPrevisaoEntrega: "asc" },
+      }),
+    ])
 
-  const cards = [
-    {
-      titulo: "Receita hoje",
-      valor: formatarBRL(dia._sum.total ?? 0),
-      detalhe: `${dia._count} venda${dia._count === 1 ? "" : "s"}`,
-      icone: ShoppingCart,
-    },
-    {
-      titulo: "Receita da semana",
-      valor: formatarBRL(semana._sum.total ?? 0),
-      detalhe: "desde domingo",
-      icone: CalendarDays,
-    },
-    {
-      titulo: "Receita do mês",
-      valor: formatarBRL(mes._sum.total ?? 0),
-      detalhe: `lucro: ${formatarBRL(mes._sum.lucroTotal ?? 0)}`,
-      icone: TrendingUp,
-    },
-    {
-      titulo: "Peças em estoque",
-      valor: String(estoque._sum.estoqueAtual ?? 0),
-      detalhe: "todas as SKUs",
-      icone: Package,
-    },
-  ]
+  // Modelo mais vendido: soma as quantidades de todas as SKUs de cada modelo.
+  const produtos = await db.produto.findMany({
+    where: { id: { in: porProduto.map((p) => p.produtoId) } },
+    include: { modelo: true },
+  })
+  const porModelo = new Map<string, number>()
+  for (const linha of porProduto) {
+    const produto = produtos.find((p) => p.id === linha.produtoId)
+    if (!produto) continue
+    porModelo.set(
+      produto.modelo.nome,
+      (porModelo.get(produto.modelo.nome) ?? 0) + (linha._sum.quantidade ?? 0)
+    )
+  }
+  const maisVendido = [...porModelo.entries()].sort((a, b) => b[1] - a[1])[0]
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-2xl font-bold uppercase tracking-tight lg:text-3xl">
-            Dashboard
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {agora.toLocaleDateString("pt-BR", {
-              weekday: "long",
-              day: "numeric",
-              month: "long",
-            })}
-          </p>
+    <div className="mx-auto max-w-7xl">
+      <PageHeader
+        eyebrow="Visão geral"
+        titulo="Dashboard"
+        subtitulo={agora.toLocaleDateString("pt-BR", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })}
+        acao={
+          <Button
+            nativeButton={false}
+            render={<Link href="/vendas/nova" />}
+            className="rounded-xl"
+          >
+            <Plus className="size-4" /> Nova venda
+          </Button>
+        }
+      />
+
+      {atrasados.length > 0 && (
+        <Link
+          href="/pedidos"
+          className="card-surface mb-6 flex items-center gap-3 border-destructive/30 bg-destructive/5 p-4 transition-colors hover:bg-destructive/10"
+        >
+          <AlertTriangle className="size-5 shrink-0 text-destructive" />
+          <div className="text-sm">
+            <p className="font-semibold text-destructive">
+              {atrasados.length} pedido
+              {atrasados.length === 1 ? "" : "s"} de produção em atraso
+            </p>
+            <p className="text-neutral-500">
+              {atrasados
+                .slice(0, 2)
+                .map(
+                  (p) =>
+                    `${p.identificacao} (previsto ${p.dataPrevisaoEntrega.toLocaleDateString("pt-BR")})`
+                )
+                .join(" · ")}
+              {atrasados.length > 2 && " …"} — confirme o recebimento.
+            </p>
+          </div>
+        </Link>
+      )}
+
+      <div className="mb-6 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          icone={ShoppingCart}
+          etiqueta="Receita hoje"
+          valor={formatarBRL(dia._sum.total ?? 0)}
+          detalhe={`${dia._count} venda${dia._count === 1 ? "" : "s"} realizada${dia._count === 1 ? "" : "s"}`}
+        />
+        <StatCard
+          icone={CalendarDays}
+          etiqueta="Receita da semana"
+          valor={formatarBRL(semana._sum.total ?? 0)}
+          detalhe="desde domingo"
+        />
+        <StatCard
+          icone={TrendingUp}
+          etiqueta="Receita do mês"
+          valor={formatarBRL(mes._sum.total ?? 0)}
+          detalhe={`lucro: ${formatarBRL(mes._sum.lucroTotal ?? 0)}`}
+        />
+        <StatCard
+          icone={Package}
+          etiqueta="Peças em estoque"
+          valor={String(estoque._sum.estoqueAtual ?? 0)}
+          detalhe="todas as SKUs"
+          marcador="SKUs"
+        />
+      </div>
+
+      <div className="mb-6 grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <StatCard
+          icone={Shirt}
+          etiqueta="Modelo mais vendido"
+          valor={maisVendido ? maisVendido[0] : "—"}
+          detalhe={
+            maisVendido
+              ? `${maisVendido[1]} peça${maisVendido[1] === 1 ? "" : "s"} vendida${maisVendido[1] === 1 ? "" : "s"}`
+              : "nenhuma venda registrada ainda"
+          }
+          destaque
+        />
+
+        <div className="card-surface overflow-hidden lg:col-span-2">
+          <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-5">
+            <div>
+              <h2 className="text-base font-semibold text-neutral-900">
+                Últimas vendas
+              </h2>
+              <p className="mt-0.5 text-xs text-neutral-400">
+                Transações mais recentes do sistema
+              </p>
+            </div>
+            <Link
+              href="/vendas"
+              className="text-xs font-medium text-neutral-600 transition-colors hover:text-neutral-900 hover:underline"
+            >
+              Ver todas →
+            </Link>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr>
+                  <th className="th-label pl-6">Data</th>
+                  <th className="th-label">Cliente</th>
+                  <th className="th-label hidden md:table-cell">Itens</th>
+                  <th className="th-label">Pagamento</th>
+                  <th className="th-label pr-6 text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {ultimasVendas.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={5}
+                      className="px-6 py-10 text-center text-sm text-neutral-400"
+                    >
+                      Nenhuma venda registrada ainda.
+                    </td>
+                  </tr>
+                )}
+                {ultimasVendas.map((v) => (
+                  <tr key={v.id} className="transition-colors hover:bg-neutral-50/60">
+                    <td className="px-4 py-4 pl-6 text-sm font-medium whitespace-nowrap text-neutral-400">
+                      {v.data.toLocaleDateString("pt-BR")}
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-2.5">
+                        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs font-semibold text-neutral-600">
+                          {v.clienteNome.charAt(0).toUpperCase()}
+                        </span>
+                        <span className="text-sm font-medium text-neutral-800">
+                          {v.clienteNome}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="hidden max-w-52 truncate px-4 py-4 text-sm text-neutral-600 md:table-cell">
+                      {v.itens
+                        .map(
+                          (i) =>
+                            `${i.quantidade}× ${i.produto.modelo.nome} ${i.produto.cor} ${i.produto.tamanho}`
+                        )
+                        .join(", ")}
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className="rounded-full border border-neutral-200 bg-neutral-50 px-2.5 py-1 text-xs font-semibold text-neutral-700">
+                        {labelFormaPagamento(v.formaPagamento)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 pr-6 text-right text-sm font-bold text-neutral-900">
+                      {formatarBRL(v.total)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-        <Button nativeButton={false} render={<Link href="/vendas/nova" />} size="lg">
-          <ShoppingCart className="size-4" /> Nova venda
-        </Button>
       </div>
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
-        {cards.map((c) => (
-          <Card key={c.titulo}>
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">{c.titulo}</p>
-                <c.icone className="size-4 text-muted-foreground" />
-              </div>
-              <p className="mt-1 text-2xl font-bold">{c.valor}</p>
-              <p className="text-xs text-muted-foreground">{c.detalhe}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Últimas vendas</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Data</TableHead>
-                <TableHead>Cliente</TableHead>
-                <TableHead className="hidden md:table-cell">Itens</TableHead>
-                <TableHead>Pagamento</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {ultimasVendas.length === 0 && (
-                <TableRow>
-                  <TableCell
-                    colSpan={5}
-                    className="py-10 text-center text-muted-foreground"
-                  >
-                    Nenhuma venda registrada ainda.
-                  </TableCell>
-                </TableRow>
-              )}
-              {ultimasVendas.map((v) => (
-                <TableRow key={v.id}>
-                  <TableCell className="whitespace-nowrap text-muted-foreground">
-                    {v.data.toLocaleDateString("pt-BR")}
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    {v.cliente.nome}
-                  </TableCell>
-                  <TableCell className="hidden max-w-52 truncate md:table-cell">
-                    {v.itens
-                      .map(
-                        (i) =>
-                          `${i.quantidade}× ${i.produto.modelo} ${i.produto.cor} ${i.produto.tamanho}`
-                      )
-                      .join(", ")}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">
-                      {labelFormaPagamento(v.formaPagamento)}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right font-semibold">
-                    {formatarBRL(v.total)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
     </div>
   )
 }

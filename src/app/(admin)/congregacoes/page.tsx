@@ -1,17 +1,8 @@
-import { Plus } from "lucide-react"
+import { Plus, Users } from "lucide-react"
 import { db } from "@/lib/db"
 import { requireAuth } from "@/lib/auth"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { PageHeader } from "@/components/layout/page-header"
 import { CongregacaoDialog } from "./congregacao-dialog"
 import { FiltroSetor } from "./filtro-setor"
 
@@ -35,70 +26,84 @@ export default async function CongregacoesPage({
   ])
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-2xl font-bold uppercase tracking-tight lg:text-3xl">
-            Congregações
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Congregações e líderes de jovens por setor
-          </p>
-        </div>
-        <CongregacaoDialog
-          setores={setores}
-          trigger={
-            <Button disabled={setores.length === 0}>
-              <Plus className="size-4" /> Nova congregação
-            </Button>
-          }
-        />
+    <div className="mx-auto max-w-7xl">
+      <PageHeader
+        eyebrow="Organização"
+        titulo="Congregações"
+        subtitulo="Congregações e líderes de jovens por setor"
+        acao={
+          <CongregacaoDialog
+            setores={setores}
+            trigger={
+              <Button className="rounded-xl" disabled={setores.length === 0}>
+                <Plus className="size-4" /> Nova congregação
+              </Button>
+            }
+          />
+        }
+      />
+
+      <div className="mb-4">
+        <FiltroSetor setores={setores} setorSelecionado={setorId ?? ""} />
       </div>
 
-      <FiltroSetor setores={setores} setorSelecionado={setorId ?? ""} />
-
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Congregação</TableHead>
-                <TableHead>Setor</TableHead>
-                <TableHead className="hidden sm:table-cell">
-                  Líder de Jovens
-                </TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="w-20" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+      <div className="card-surface overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr>
+                <th className="th-label pl-6">Congregação</th>
+                <th className="th-label">Setor</th>
+                <th className="th-label hidden sm:table-cell">
+                  Líder de jovens
+                </th>
+                <th className="th-label">Status</th>
+                <th className="th-label pr-6 text-right">Ação</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100">
               {congregacoes.length === 0 && (
-                <TableRow>
-                  <TableCell
+                <tr>
+                  <td
                     colSpan={5}
-                    className="py-10 text-center text-muted-foreground"
+                    className="px-6 py-12 text-center text-sm text-neutral-400"
                   >
                     {setores.length === 0
                       ? "Cadastre um setor antes de criar congregações."
                       : "Nenhuma congregação encontrada."}
-                  </TableCell>
-                </TableRow>
+                  </td>
+                </tr>
               )}
               {congregacoes.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell className="font-medium">{c.nome}</TableCell>
-                  <TableCell>{c.setor.nome}</TableCell>
-                  <TableCell className="hidden text-muted-foreground sm:table-cell">
+                <tr key={c.id} className="transition-colors hover:bg-neutral-50/60">
+                  <td className="px-4 py-4 pl-6">
+                    <div className="flex items-center gap-2.5">
+                      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-neutral-100">
+                        <Users className="size-4 text-neutral-500" />
+                      </span>
+                      <span className="text-sm font-medium text-neutral-900">
+                        {c.nome}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 text-sm text-neutral-600">
+                    {c.setor.nome}
+                  </td>
+                  <td className="hidden px-4 py-4 text-sm text-neutral-500 sm:table-cell">
                     {c.lider}
-                  </TableCell>
-                  <TableCell>
-                    {c.ativo ? (
-                      <Badge variant="secondary">Ativa</Badge>
-                    ) : (
-                      <Badge variant="outline">Inativa</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
+                  </td>
+                  <td className="px-4 py-4">
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                        c.ativo
+                          ? "bg-neutral-900 text-white"
+                          : "bg-neutral-100 text-neutral-400"
+                      }`}
+                    >
+                      {c.ativo ? "Ativa" : "Inativa"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-4 pr-6 text-right">
                     <CongregacaoDialog
                       setores={setores}
                       congregacao={c}
@@ -108,13 +113,13 @@ export default async function CongregacoesPage({
                         </Button>
                       }
                     />
-                  </TableCell>
-                </TableRow>
+                  </td>
+                </tr>
               ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }

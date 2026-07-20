@@ -5,6 +5,7 @@ import { z } from "zod"
 import { db } from "@/lib/db"
 import { requireAuth } from "@/lib/auth"
 import { parseBRL } from "@/lib/money"
+import { parseDataLocal } from "@/lib/data"
 import type { ActionState } from "./action-state"
 
 const entradaSchema = z.object({
@@ -17,7 +18,7 @@ const entradaSchema = z.object({
     .number({ message: "Informe o custo unitário do lote" })
     .int()
     .positive("Custo unitário deve ser maior que zero"),
-  data: z.coerce.date(),
+  data: z.date({ message: "Informe a data" }),
   observacao: z.string().trim().optional(),
 })
 
@@ -33,7 +34,7 @@ export async function registrarEntrada(
     produtoId: formData.get("produtoId"),
     quantidade: Number(formData.get("quantidade")),
     custoUnitario: custo ?? undefined,
-    data: (formData.get("data") as string) || new Date(),
+    data: parseDataLocal((formData.get("data") as string) ?? "") ?? new Date(),
     observacao: (formData.get("observacao") as string) || undefined,
   })
   if (!parsed.success) {
