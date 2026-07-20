@@ -129,6 +129,14 @@
   }
 }
 
+@layer base {
+  /* Rede de segurança: texto sem espaços (nome de arquivo, URL, e-mail) não
+     pode alargar o container e estourar o layout. */
+  body {
+    overflow-wrap: break-word;
+  }
+}
+
 @layer components {
   /* Cartão do design: cantos suaves, borda leve e sombra discreta. */
   .card-surface {

@@ -41,7 +41,10 @@ export default async function AdminLayout({
             <div className="flex size-7 items-center justify-center rounded-full bg-white/10 text-xs font-semibold text-white">
               {session.user.name?.charAt(0).toUpperCase() ?? "A"}
             </div>
-            <p className="truncate text-xs font-medium text-neutral-200">
+            <p
+              className="truncate text-xs font-medium text-neutral-200"
+              title={session.user.name ?? undefined}
+            >
               {session.user.name}
             </p>
           </div>

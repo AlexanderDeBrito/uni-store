@@ -145,7 +145,10 @@ export default async function MovimentacoesPage({
                     <TableCell className="hidden text-right text-muted-foreground sm:table-cell">
                       {formatarBRL(m.custoUnitario)}
                     </TableCell>
-                    <TableCell className="hidden max-w-56 truncate text-muted-foreground lg:table-cell">
+                    <TableCell
+                      className="hidden max-w-56 truncate text-muted-foreground lg:table-cell"
+                      title={m.observacao ?? undefined}
+                    >
                       {m.observacao ?? "—"}
                     </TableCell>
                   </TableRow>

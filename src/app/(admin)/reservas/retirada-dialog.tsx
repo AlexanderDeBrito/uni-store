@@ -158,7 +158,10 @@ export function RetiradaDialog({
                 className="flex items-center gap-3 rounded-xl border border-neutral-200 p-3"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-neutral-900">
+                  <p
+                    className="truncate text-sm font-medium text-neutral-900"
+                    title={item.descricao}
+                  >
                     {item.descricao}
                   </p>
                   <p className="text-xs text-neutral-400">

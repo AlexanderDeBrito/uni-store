@@ -89,7 +89,10 @@ export function CardProduto({
             onClick={() => setAberto(true)}
             className="text-left"
           >
-            <p className="truncate font-semibold text-neutral-900 hover:underline">
+            <p
+              className="truncate font-semibold text-neutral-900 hover:underline"
+              title={produto.nome}
+            >
               {produto.nome}
             </p>
           </button>

@@ -163,7 +163,15 @@ export default async function ReservasPage({
                       </p>
                     </td>
                     <td className="hidden max-w-64 px-4 py-4 text-sm text-neutral-600 md:table-cell">
-                      <p className="truncate">
+                      <p
+                        className="truncate"
+                        title={r.itens
+                          .map(
+                            (i) =>
+                              `${i.quantidade}× ${i.variacao.produto.nome} ${descreverVariacao(i.variacao)}`
+                          )
+                          .join(", ")}
+                      >
                         {r.itens
                           .map(
                             (i) =>

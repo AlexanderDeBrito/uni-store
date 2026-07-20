@@ -90,7 +90,10 @@ export default async function ModelosPage() {
                 <div className="p-4">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="truncate font-semibold text-neutral-900">
+                      <p
+                        className="truncate font-semibold text-neutral-900"
+                        title={m.nome}
+                      >
                         {m.nome}
                       </p>
                       <p className="mt-0.5 text-xs text-neutral-400">

@@ -116,7 +116,10 @@ export function LinkDialog({
                       onChange={() => alternar(p.id)}
                       className="size-4 accent-neutral-900"
                     />
-                    <span className="min-w-0 flex-1 truncate text-sm text-neutral-800">
+                    <span
+                      className="min-w-0 flex-1 truncate text-sm text-neutral-800"
+                      title={p.label}
+                    >
                       {p.label}
                     </span>
                     <span className="shrink-0 text-sm font-medium text-neutral-600">

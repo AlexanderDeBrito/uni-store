@@ -218,7 +218,15 @@ export default async function DashboardPage() {
                         </span>
                       </div>
                     </td>
-                    <td className="hidden max-w-52 truncate px-4 py-4 text-sm text-neutral-600 md:table-cell">
+                    <td
+                      className="hidden max-w-52 truncate px-4 py-4 text-sm text-neutral-600 md:table-cell"
+                      title={v.itens
+                        .map(
+                          (i) =>
+                            `${i.quantidade}× ${i.variacao.produto.nome} ${i.variacao.cor} ${i.variacao.tamanho}`
+                        )
+                        .join(", ")}
+                    >
                       {v.itens
                         .map(
                           (i) =>

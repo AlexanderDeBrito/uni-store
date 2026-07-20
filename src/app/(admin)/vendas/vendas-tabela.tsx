@@ -94,7 +94,10 @@ export function VendasTabela({ vendas }: { vendas: VendaLinha[] }) {
                         {v.clienteNome.charAt(0).toUpperCase()}
                       </span>
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-neutral-800">
+                        <p
+                          className="truncate text-sm font-medium text-neutral-800"
+                          title={v.clienteNome}
+                        >
                           {v.clienteNome}
                         </p>
                         {v.cpf && (
@@ -108,7 +111,12 @@ export function VendasTabela({ vendas }: { vendas: VendaLinha[] }) {
                   <td className="hidden px-4 py-4 text-sm text-neutral-500 lg:table-cell">
                     {v.congregacao ?? "—"}
                   </td>
-                  <td className="hidden max-w-52 truncate px-4 py-4 text-sm text-neutral-600 md:table-cell">
+                  <td
+                    className="hidden max-w-52 truncate px-4 py-4 text-sm text-neutral-600 md:table-cell"
+                    title={v.itens
+                      .map((i) => `${i.quantidade}× ${i.descricao}`)
+                      .join(", ")}
+                  >
                     {v.itens
                       .map((i) => `${i.quantidade}× ${i.descricao}`)
                       .join(", ")}

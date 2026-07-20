@@ -119,7 +119,10 @@ export function UploadArquivo({
             )}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-neutral-800">
+            <p
+              className="truncate text-sm font-medium text-neutral-800"
+              title={enviado.nome}
+            >
               {enviado.nome}
             </p>
             <p className="flex items-center gap-1 text-xs text-neutral-500">
@@ -160,8 +163,11 @@ export function UploadArquivo({
 
       {arquivoAtual && !enviado && (
         <p className="flex items-center gap-1.5 text-xs text-neutral-500">
-          <Upload className="size-3" /> Atual: {arquivoAtual} — enviar outro
-          substitui.
+          <Upload className="size-3 shrink-0" />
+          <span className="truncate" title={arquivoAtual}>
+            Atual: {arquivoAtual}
+          </span>
+          <span className="shrink-0">— enviar outro substitui.</span>
         </p>
       )}
       {erro && <p className="text-xs font-medium text-destructive">{erro}</p>}
