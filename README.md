@@ -40,7 +40,7 @@ Sistema de gestão de estoque, vendas e eventos para loja de vestuário jovem (U
 
    ```
    SUPABASE_URL="https://<project-ref>.supabase.co"
-   SUPABASE_SERVICE_ROLE_KEY="<Settings → API → service_role>"
+   SUPABASE_SERVICE_ROLE_KEY="eyJhbGciOi..."   # cole a chave real, nao este texto
    ```
 
    A chave fica só no servidor (nunca vai ao browser). Sem ela o sistema

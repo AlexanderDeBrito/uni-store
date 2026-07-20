@@ -12,10 +12,22 @@ export const TIPOS_ACEITOS = [
 
 export const TAMANHO_MAXIMO = 10 * 1024 * 1024 // 10 MB
 
+/**
+ * A chave vai em cabeçalho HTTP, que só aceita ASCII. Se alguém colar o texto
+ * de exemplo (com "→", "<", ">"), o erro apareceria como um críptico
+ * "Cannot convert argument to a ByteString" — melhor detectar aqui.
+ */
+function chaveValida(chave: string | undefined): boolean {
+  if (!chave || chave.length < 40) return false
+  if (/[^\x20-\x7E]/.test(chave)) return false // caractere não-ASCII
+  if (/[<>]/.test(chave)) return false // sobrou placeholder
+  return true
+}
+
 /** O upload só funciona com a service role key configurada (nunca exposta ao browser). */
 export function storageConfigurado(): boolean {
   return Boolean(
-    process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
+    process.env.SUPABASE_URL && chaveValida(process.env.SUPABASE_SERVICE_ROLE_KEY)
   )
 }
 
@@ -54,9 +66,13 @@ export async function criarUploadAssinado(
   if (!TIPOS_ACEITOS.includes(tipo)) {
     throw new Error("Formato inválido. Use PNG, JPEG, WEBP ou PDF.")
   }
-  if (!storageConfigurado()) {
+  if (!process.env.SUPABASE_URL) {
+    throw new Error("Upload indisponível: falta configurar SUPABASE_URL.")
+  }
+  if (!chaveValida(process.env.SUPABASE_SERVICE_ROLE_KEY)) {
     throw new Error(
-      "Upload indisponível: configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY."
+      "A SUPABASE_SERVICE_ROLE_KEY está inválida — parece o texto de exemplo. " +
+        "Copie a chave real em Supabase → Settings → API → service_role."
     )
   }
 
