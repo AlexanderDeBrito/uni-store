@@ -8,6 +8,54 @@ import { requireAuth } from "@/lib/auth"
 import { urlDoBucket } from "@/lib/storage"
 import type { ActionState } from "./action-state"
 
+export type ModeloCriado = {
+  ok: boolean
+  message?: string
+  modelo?: { id: string; nome: string }
+}
+
+/**
+ * Cria um modelo rapidamente a partir do cadastro de produto e devolve o id,
+ * para o formulário já selecioná-lo. A arte, se houver, já veio enviada ao
+ * Storage pelo navegador (só chega a URL).
+ */
+export async function criarModeloRapido(dados: {
+  nome: string
+  arquivoUrl?: string
+  arquivoNome?: string
+  arquivoTipo?: string
+}): Promise<ModeloCriado> {
+  await requireAuth()
+
+  const nome = dados.nome.trim()
+  if (!nome) return { ok: false, message: "Informe o nome do modelo." }
+  if (dados.arquivoUrl && !urlDoBucket(dados.arquivoUrl)) {
+    return { ok: false, message: "Arquivo inválido." }
+  }
+
+  try {
+    const modelo = await db.modelo.create({
+      data: {
+        nome,
+        ...(dados.arquivoUrl && {
+          arquivoUrl: dados.arquivoUrl,
+          arquivoNome: dados.arquivoNome ?? null,
+          arquivoTipo: dados.arquivoTipo ?? null,
+        }),
+      },
+      select: { id: true, nome: true },
+    })
+    revalidatePath("/produtos")
+    revalidatePath("/produtos/modelos")
+    return { ok: true, message: "Modelo criado.", modelo }
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return { ok: false, message: `Já existe um modelo chamado "${nome}".` }
+    }
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
 const modeloSchema = z.object({
   id: z.string().optional(),
   nome: z.string().trim().min(1, "Informe o nome do modelo"),

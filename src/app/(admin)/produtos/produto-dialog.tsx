@@ -13,10 +13,12 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { InputNumero } from "@/components/ui/input-numero"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import { ModeloSelect } from "@/components/modelo-select"
 import { UploadArquivo } from "@/components/upload-arquivo"
 import { TAMANHOS } from "@/lib/constantes"
 import { CATEGORIAS, categoria as infoCategoria, porcoesDeLitros } from "@/lib/produto"
@@ -42,6 +44,7 @@ export function ProdutoDialog({
   const [variacoes, setVariacoes] = useState<VariacaoForm[]>([
     { cor: "", tamanho: "M", quantidade: 0 },
   ])
+  const [modeloId, setModeloId] = useState("")
   // Categorias sem variação usam um único par cor/quantidade
   const [corSimples, setCorSimples] = useState("")
   const [qtdSimples, setQtdSimples] = useState(0)
@@ -62,6 +65,7 @@ export function ProdutoDialog({
       setCorSimples("")
       setQtdSimples(0)
       setLitros(0)
+      setModeloId("")
     }
   }, [state])
 
@@ -150,23 +154,14 @@ export function ProdutoDialog({
                 <Label htmlFor="p-modelo">
                   Modelo {info?.usaModelo === "obrigatorio" && "*"}
                 </Label>
-                <NativeSelect
-                  id="p-modelo"
-                  name="modeloId"
-                  defaultValue=""
+                <input type="hidden" name="modeloId" value={modeloId} />
+                <ModeloSelect
+                  modelos={modelos}
+                  value={modeloId}
+                  onChange={setModeloId}
                   required={info?.usaModelo === "obrigatorio"}
-                >
-                  <option value="">
-                    {info?.usaModelo === "obrigatorio"
-                      ? "Selecione o modelo"
-                      : "Sem modelo"}
-                  </option>
-                  {modelos.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.nome}
-                    </option>
-                  ))}
-                </NativeSelect>
+                  uploadDisponivel={uploadDisponivel}
+                />
               </div>
             )}
 
@@ -236,18 +231,10 @@ export function ProdutoDialog({
                     {index === 0 && (
                       <span className="text-xs text-neutral-400">Qtd.</span>
                     )}
-                    <Input
-                      type="number"
+                    <InputNumero
                       min={0}
-                      value={v.quantidade}
-                      onChange={(e) =>
-                        atualizar(index, {
-                          quantidade: Math.max(
-                            0,
-                            Math.trunc(Number(e.target.value) || 0)
-                          ),
-                        })
-                      }
+                      valor={v.quantidade}
+                      aoMudar={(n) => atualizar(index, { quantidade: n })}
                       aria-label={`Quantidade da variação ${index + 1}`}
                     />
                   </div>
@@ -301,14 +288,11 @@ export function ProdutoDialog({
               )}
               <div className="space-y-2">
                 <Label htmlFor="p-qtd">Quantidade *</Label>
-                <Input
+                <InputNumero
                   id="p-qtd"
-                  type="number"
                   min={0}
-                  value={qtdSimples}
-                  onChange={(e) =>
-                    setQtdSimples(Math.max(0, Math.trunc(Number(e.target.value) || 0)))
-                  }
+                  valor={qtdSimples}
+                  aoMudar={setQtdSimples}
                 />
               </div>
             </div>
@@ -334,16 +318,11 @@ export function ProdutoDialog({
               {unidade === "UNIDADE" ? (
                 <div className="space-y-2">
                   <Label htmlFor="p-qtd-alim">Quantidade *</Label>
-                  <Input
+                  <InputNumero
                     id="p-qtd-alim"
-                    type="number"
                     min={0}
-                    value={qtdSimples}
-                    onChange={(e) =>
-                      setQtdSimples(
-                        Math.max(0, Math.trunc(Number(e.target.value) || 0))
-                      )
-                    }
+                    valor={qtdSimples}
+                    aoMudar={setQtdSimples}
                   />
                 </div>
               ) : (
@@ -364,15 +343,12 @@ export function ProdutoDialog({
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="p-ml">Tamanho do copo (ml) *</Label>
-                      <Input
+                      <InputNumero
                         id="p-ml"
                         name="mlPorPorcao"
-                        type="number"
                         min={1}
-                        value={ml}
-                        onChange={(e) =>
-                          setMl(Math.max(1, Math.trunc(Number(e.target.value) || 1)))
-                        }
+                        valor={ml}
+                        aoMudar={setMl}
                       />
                     </div>
                   </div>

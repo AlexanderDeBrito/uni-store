@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { CheckCircle2, Loader2, MessageCircle, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { InputNumero } from "@/components/ui/input-numero"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
 import { Textarea } from "@/components/ui/textarea"
@@ -243,19 +244,11 @@ export function ReservaForm({
                   </NativeSelect>
                 </div>
                 <div className="w-20">
-                  <Input
-                    type="number"
+                  <InputNumero
                     min={1}
                     max={produto?.disponivel}
-                    value={item.quantidade}
-                    onChange={(e) =>
-                      atualizarItem(index, {
-                        quantidade: Math.max(
-                          1,
-                          Math.trunc(Number(e.target.value) || 1)
-                        ),
-                      })
-                    }
+                    valor={item.quantidade}
+                    aoMudar={(n) => atualizarItem(index, { quantidade: n })}
                     aria-label={`Quantidade da peça ${index + 1}`}
                   />
                 </div>

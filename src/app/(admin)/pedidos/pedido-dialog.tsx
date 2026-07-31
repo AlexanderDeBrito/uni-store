@@ -13,6 +13,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { InputNumero } from "@/components/ui/input-numero"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
 import { Textarea } from "@/components/ui/textarea"
@@ -192,18 +193,10 @@ export function PedidoDialog({
                 </div>
                 <div className="w-20 space-y-1">
                   <span className="text-xs text-neutral-400">Qtd.</span>
-                  <Input
-                    type="number"
+                  <InputNumero
                     min={1}
-                    value={item.quantidadePedida}
-                    onChange={(e) =>
-                      atualizar(index, {
-                        quantidadePedida: Math.max(
-                          1,
-                          Math.trunc(Number(e.target.value) || 1)
-                        ),
-                      })
-                    }
+                    valor={item.quantidadePedida}
+                    aoMudar={(n) => atualizar(index, { quantidadePedida: n })}
                     aria-label={`Quantidade do item ${index + 1}`}
                   />
                 </div>
